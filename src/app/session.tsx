@@ -9,15 +9,20 @@ import { color, space, type } from '../ui/theme';
 
 export default function Session() {
   const active = useApp((s) => s.active);
+  const flagsVersion = useApp((s) => s.flagsVersion);
   const currentItem = useApp((s) => s.currentItem);
+  const ensureServable = useApp((s) => s.ensureServable);
+  const saveProgress = useApp((s) => s.saveProgress);
   const recordAnswer = useApp((s) => s.recordAnswer);
   const advance = useApp((s) => s.advance);
   const finish = useApp((s) => s.finishSession);
   const abandon = useApp((s) => s.abandonSession);
   const report = useApp((s) => s.report);
   const answered = useRef(false);
+  const slot = active?.slots[active.index];
+  const slotKey = slot ? `${slot.templateId}@${slot.level}#${slot.seed}/v${slot.version}` : '';
 
-  const item = useMemo(() => currentItem(), [active?.id, active?.index]);
+  const item = useMemo(() => currentItem(), [active?.id, active?.index, slotKey, flagsVersion]);
 
   // Resumed after the app was closed on an answered puzzle: move past it rather than grading it twice.
   useEffect(() => {
@@ -30,7 +35,23 @@ export default function Session() {
     }
   }, [active?.id]);
 
-  if (!active || !item) return <Redirect href="/today" />;
+  // The kill switch and template versions are checked on resume, on every new puzzle, and whenever the remote list changes.
+  useEffect(() => {
+    if (!active || active.results.length > active.index) return;
+    if (ensureServable() === 'ended') {
+      if (useApp.getState().active?.results.length) {
+        finish();
+        router.replace('/recap');
+      } else {
+        abandon();
+        router.replace('/today');
+      }
+    }
+  }, [active?.id, active?.index, slotKey, flagsVersion]);
+
+  if (!active) return <Redirect href="/today" />;
+  // Being replaced (switched off or changed since it was made): the effect above swaps it in a moment.
+  if (!item || !slot) return null;
 
   const ladder = active.ladder;
   const total = ladder ? undefined : active.challenge ? active.challenge.length : active.slots.length;
@@ -82,14 +103,17 @@ export default function Session() {
 
   return (
     <ItemScreen
-      key={`${active.id}:${active.index}`}
+      key={`${active.id}:${active.index}:${item.id}`}
       item={item}
+      support={slot.support}
       header={header}
       timed={active.timed}
-      onAnswered={(a) => {
+      initialProgress={active.progress}
+      onProgress={saveProgress}
+      onAnswered={({ result: _result, ...a }) => {
         if (answered.current) return;
         answered.current = true;
-        recordAnswer(item, { correct: a.correct, hint: a.hint, ms: a.ms });
+        recordAnswer(item, a);
       }}
       onReport={(reason) => report(item, reason)}
       continueLabel={isLast ? 'See recap' : 'Next'}

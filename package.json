@@ -39,7 +39,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "content:audit": "vitest run src/content",
-    "content:sample": "CONTENT_SAMPLE=1 vitest run --silent=false"
+    "content:sample": "CONTENT_SAMPLE=1 vitest run src/dev/sample-items.test.ts --silent=false",
+    "content:worksheet": "CONTENT_SAMPLE=1 vitest run src/dev/review-sheet.test.ts",
+    "content:signoff": "SIGNOFF_REPORT=1 vitest run src/content/signoff.test.ts --silent=false"
   },
   "private": true
 }

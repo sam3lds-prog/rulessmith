@@ -1,11 +1,14 @@
 /**
  * The five puzzle boards. Every interaction is a tap; nothing requires dragging.
- * Each board is controlled: it reports a complete Response (or null while the
- * learner is still building one) and shows marks once locked.
+ * Each board reports a complete Response (or null while the learner is still
+ * building one) and shows marks once locked. It also reports its work in
+ * progress as a BoardDraft, and can start from a saved one, so a half-built
+ * answer survives a refresh or force-close.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type {
+  BoardDraft,
   CheckResult,
   ChoicePayload,
   ConstructPayload,
@@ -26,20 +29,26 @@ interface BoardProps<P> {
   locked: boolean;
   result?: CheckResult;
   onChange: (r: Response | null) => void;
+  /** Saved work to start from. Ignored if it does not fit this board. */
+  initialDraft?: BoardDraft | null;
+  onDraft?: (d: BoardDraft) => void;
 }
 
 // ================================================================ sort
 
-export function SortBoard({ payload, locked, result, onChange }: BoardProps<SortPayload>) {
+export function SortBoard({ payload, locked, result, onChange, initialDraft, onDraft }: BoardProps<SortPayload>) {
   const n = payload.numbers.length;
   // One state object, updated functionally, so fast taps never act on a stale "current" tile.
-  const [board, setBoard] = useState<{ bins: (null | 'yes' | 'no')[]; current: number | null }>(() => ({
-    bins: Array(n).fill(null),
-    current: 0,
-  }));
+  const [board, setBoard] = useState<{ bins: (null | 'yes' | 'no')[]; current: number | null }>(() => {
+    const saved = initialDraft?.kind === 'sort' && initialDraft.bins.length === n ? initialDraft.bins : null;
+    const bins = saved ?? Array(n).fill(null);
+    const first = bins.findIndex((b) => b === null);
+    return { bins, current: first >= 0 ? first : null };
+  });
   const { bins, current } = board;
 
   useEffect(() => {
+    onDraft?.({ kind: 'sort', bins });
     if (bins.every((b) => b !== null)) onChange({ kind: 'sort', yes: bins.map((b, i) => (b === 'yes' ? i : -1)).filter((i) => i >= 0) });
     else onChange(null);
   }, [bins]);
@@ -114,16 +123,26 @@ export function SortBoard({ payload, locked, result, onChange }: BoardProps<Sort
 
 // ================================================================ construct
 
-export function ConstructBoard({ payload, locked, result, onChange }: BoardProps<ConstructPayload>) {
+export function ConstructBoard({ payload, locked, result, onChange, initialDraft, onDraft }: BoardProps<ConstructPayload>) {
   const blanks = useMemo(() => payload.fixed.map((d, i) => (d === null ? i : -1)).filter((i) => i >= 0), [payload]);
-  const [entry, setEntry] = useState<{ fill: (number | null)[]; sel: number }>(() => ({ fill: blanks.map(() => null), sel: 0 }));
+  const [entry, setEntry] = useState<{ fill: (number | null)[]; sel: number }>(() => {
+    const saved = initialDraft?.kind === 'construct' && initialDraft.fill.length === blanks.length ? initialDraft.fill : null;
+    const fill = saved ?? blanks.map(() => null);
+    const first = fill.findIndex((d) => d === null);
+    return { fill, sel: first >= 0 ? first : 0 };
+  });
   const { fill, sel } = entry;
   const setSel = (j: number) => setEntry((prev) => ({ ...prev, sel: j }));
-  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [picked, setPicked] = useState<Set<number>>(() => new Set(initialDraft?.kind === 'constructAll' ? initialDraft.picked : []));
 
   useEffect(() => {
-    if (payload.mode === 'all') onChange(picked.size ? { kind: 'constructAll', digits: [...picked].sort() } : null);
-    else onChange(fill.every((d) => d !== null) ? { kind: 'construct', digits: fill as number[] } : null);
+    if (payload.mode === 'all') {
+      onDraft?.({ kind: 'constructAll', picked: [...picked].sort() });
+      onChange(picked.size ? { kind: 'constructAll', digits: [...picked].sort() } : null);
+    } else {
+      onDraft?.({ kind: 'construct', fill });
+      onChange(fill.every((d) => d !== null) ? { kind: 'construct', digits: fill as number[] } : null);
+    }
   }, [fill, picked]);
 
   const typeDigit = (d: number) => {
@@ -209,9 +228,14 @@ export function ConstructBoard({ payload, locked, result, onChange }: BoardProps
 const tupleLabel = (t: number[], names: string[]) =>
   t.length === 1 ? `${names[0]} = ${fmt(t[0])}` : t.map((v, i) => `${names[i]} = ${fmt(v)}`).join(', ');
 
-export function RefuteBoard({ payload, locked, result, onChange }: BoardProps<RefutePayload>) {
-  const [choice, setChoice] = useState<'true' | number | null>(null);
+export function RefuteBoard({ payload, locked, result, onChange, initialDraft, onDraft }: BoardProps<RefutePayload>) {
+  const [choice, setChoice] = useState<'true' | number | null>(() => {
+    if (initialDraft?.kind !== 'refute') return null;
+    const c = initialDraft.choice;
+    return c === 'true' || (typeof c === 'number' && c >= 0 && c < payload.candidates.length) ? c : null;
+  });
   useEffect(() => {
+    onDraft?.({ kind: 'refute', choice });
     if (choice === null) onChange(null);
     else if (choice === 'true') onChange({ kind: 'refute', verdict: 'true' });
     else onChange({ kind: 'refute', verdict: 'false', counterexample: payload.candidates[choice] });
@@ -251,9 +275,14 @@ export function RefuteBoard({ payload, locked, result, onChange }: BoardProps<Re
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E'];
 
-export function ChoiceBoard({ payload, locked, onChange }: BoardProps<ChoicePayload>) {
-  const [sel, setSel] = useState<string | null>(null);
-  useEffect(() => onChange(sel ? { kind: 'choice', optionId: sel } : null), [sel]);
+export function ChoiceBoard({ payload, locked, onChange, initialDraft, onDraft }: BoardProps<ChoicePayload>) {
+  const [sel, setSel] = useState<string | null>(() =>
+    initialDraft?.kind === 'choice' && payload.options.some((o) => o.id === initialDraft.sel) ? initialDraft.sel : null,
+  );
+  useEffect(() => {
+    onDraft?.({ kind: 'choice', sel });
+    onChange(sel ? { kind: 'choice', optionId: sel } : null);
+  }, [sel]);
   return (
     <View style={{ gap: space.sm }} accessibilityRole="radiogroup">
       {payload.options.map((o, i) => {
@@ -289,9 +318,12 @@ export function ChoiceBoard({ payload, locked, onChange }: BoardProps<ChoicePayl
 
 // ================================================================ numeric
 
-export function NumericBoard({ payload, locked, result, onChange }: BoardProps<NumericPayload>) {
-  const [text, setText] = useState('');
-  useEffect(() => onChange(text ? { kind: 'numeric', value: text } : null), [text]);
+export function NumericBoard({ payload, locked, result, onChange, initialDraft, onDraft }: BoardProps<NumericPayload>) {
+  const [text, setText] = useState(() => (initialDraft?.kind === 'numeric' && /^\d{0,9}$/.test(initialDraft.text) ? initialDraft.text : ''));
+  useEffect(() => {
+    onDraft?.({ kind: 'numeric', text });
+    onChange(text ? { kind: 'numeric', value: text } : null);
+  }, [text]);
   const tone = locked ? (result?.correct ? styles.answerRight : styles.answerWrong) : null;
   return (
     <View style={{ gap: space.lg }}>

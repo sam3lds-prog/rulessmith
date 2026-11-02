@@ -9,11 +9,15 @@
 | `exam_sprint_90d` | non-renewing subscription | $29.99 | Premium for 90 days; extends if bought again |
 | `pack_number_properties` | non-consumable | $4.99 | Divisibility + primes and factors: levels 1 to 7, unlimited runs |
 | `pack_remainders` | non-consumable | $4.99 | Remainders: levels 1 to 7, unlimited runs |
-| `pack_challenge_700` | non-consumable | $6.99 | Challenge mode at levels 8 to 10 |
+| `pack_challenge_top` | non-consumable | $6.99 | "Hardest Levels Challenge": Challenge mode at levels 8 to 10 |
 
 Free: the daily puzzle, 3 runs a day, levels 1 to 3 of every track, every hint and explanation. Premium includes every pack. Tokens are earned (5 per session, 3 per daily puzzle) and spent on bonus runs; they are never sold.
 
 Keep $7.99 / $49.99 as the comparison arm once traffic allows a price test.
+
+The hardest-levels pack was called "700+ Challenge" (`pack_challenge_700`). That read like a score guarantee, and 700 is on the old GMAT scale, so it was renamed before any store product existed. Saved purchases are mapped to the new id (`RENAMED_PRODUCTS`). Product names describe difficulty, never a score.
+
+**First paid test (per the Nov 2026 review):** sell monthly and yearly Premium only. Packs and Exam Sprint wait until interviews ask for them; ads stay off until their effect on return has been measured. Earned tokens for an extra run are fine; nothing bought may change mastery.
 
 ## Connecting real purchases (Phase 4)
 

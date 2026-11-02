@@ -6,7 +6,7 @@ it('sample', () => {
   const slow: [string, number][] = [];
   for (const t of TEMPLATES) {
     for (const level of [2, 9]) {
-      const item = generateItem(t.id, Math.max(level, t.minLevel ?? 1), 4242 + level);
+      const item = generateItem(t.id, Math.max(level, t.minLevel ?? 1), 4242 + level, { allowDisabled: true });
       const t0 = performance.now();
       for (let i = 0; i < 3; i++) checkItem(item, item.key);
       const ms = (performance.now() - t0) / 3;

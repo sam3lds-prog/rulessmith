@@ -1,18 +1,12 @@
 import type { ExamId } from '../content/curriculum';
+import type { Response } from '../content/types';
 
 export type AgeBand = 'under13' | '13to17' | '18plus';
 
 export type Role = 'high-school' | 'college' | 'grad-applicant' | 'working-adult' | 'parent' | 'tutor';
 
-export type Subject = 'quant' | 'data' | 'verbal' | 'grammar' | 'logic';
-
-export const SUBJECTS: { id: Subject; name: string; available: boolean }[] = [
-  { id: 'quant', name: 'Quant', available: true },
-  { id: 'data', name: 'Data', available: false },
-  { id: 'verbal', name: 'Verbal', available: false },
-  { id: 'grammar', name: 'Grammar', available: false },
-  { id: 'logic', name: 'Logic', available: false },
-];
+/** Only Quant exists. Other subjects are added here when they ship, not before. */
+export type Subject = 'quant';
 
 export interface Profile {
   ageBand: AgeBand;
@@ -21,13 +15,17 @@ export interface Profile {
   exams: ExamId[];
   /** ISO date (YYYY-MM-DD), or undefined if not booked. */
   testDate?: string;
+  /** A note for the learner. The planner does not read it, and the app never promises a score. */
   goal: { kind: 'score'; target: string } | { kind: 'skill'; text: string };
   currentLevel: { kind: 'score'; value: string } | { kind: 'self'; rating: 1 | 2 | 3 | 4 | 5 };
   minutesPerDay: number;
   daysPerWeek: number;
   subjects: Subject[];
-  style: { timed: boolean; reminders: boolean };
+  /** `reminders` came from v1 onboarding and is ignored: reminders are not built yet. */
+  style: { timed: boolean; reminders?: boolean };
   createdAt: number;
+  /** Last edit. Two devices keep the newer profile. */
+  updatedAt?: number;
 }
 
 export type MasteryStatus = 'new' | 'learning' | 'practicing' | 'secure';
@@ -38,22 +36,54 @@ export type Band = 'learn' | 'practice' | 'challenge';
 
 export type SessionMode = 'journey' | 'skill' | 'review' | 'ladder' | 'challenge' | 'checkpoint' | 'daily' | 'try';
 
+/**
+ * How an item is shown.
+ * - guided: the rule is on screen. A correct answer moves the learner toward Practicing, never to Secure.
+ * - independent: the rule is hidden. Opening it counts as a hint. Only these answers can prove Secure.
+ */
+export type Support = 'guided' | 'independent';
+
+/**
+ * One answered puzzle. This is the permanent learning record: it syncs by `id`,
+ * and skill states can be rebuilt from it (sync/merge.ts `rebuildSkills`).
+ */
 export interface Attempt {
+  /** Stable id made on the device when the answer is graded. Sync merges by it. */
+  id: string;
+  /** `${templateId}@${level}#${seed}`. Replay needs `templateVersion` too. */
   itemId: string;
+  templateId: string;
+  /** The template version that produced the puzzle. 0 = unknown (answered before versions were recorded). */
+  templateVersion: number;
+  contentVersion: string;
   skillId: string;
   family: string;
   level: number;
   transfer: boolean;
+  support: Support;
   correct: boolean;
-  /** A hint (or opening the rule lens) before the first answer makes this practice, not evidence. */
+  /** A hint, or opening a hidden rule, before the first answer. Makes the attempt practice, not evidence. */
   hintBeforeAnswer: boolean;
+  hintsUsed: number;
+  /** The rule was on screen when the learner answered (guided, or revealed). */
+  ruleShown: boolean;
+  /** What the learner answered. Missing only on attempts recorded before responses were stored. */
+  response?: Response;
+  /** Named misconception behind a wrong choice, from the checker. */
+  misconception?: string;
+  /** Active time on the puzzle (app in the foreground), in milliseconds. */
   ms: number;
+  /** When the puzzle first appeared. */
+  firstSeenAt?: number;
   at: number;
   mode: SessionMode;
+  sessionId?: string;
 }
 
 export interface EvidenceEntry {
   correct: boolean;
+  /** Guided answers count toward Practicing only. */
+  support: Support;
   family: string;
   transfer: boolean;
   day: string;
@@ -83,9 +113,12 @@ export interface SkillState {
 export interface Slot {
   skillId: string;
   templateId: string;
+  /** Template version when the slot was made. A newer app version regenerates the slot rather than serving a different puzzle under the same id. */
+  version: number;
   level: number;
   seed: number;
   band: Band;
+  support: Support;
   reason: 'target' | 'review' | 'stretch' | 'checkpoint' | 'challenge' | 'ladder' | 'daily' | 'placement' | 'try';
 }
 

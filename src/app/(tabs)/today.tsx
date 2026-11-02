@@ -49,6 +49,11 @@ export default function Today() {
         {s.streak.count > 0 ? <Small style={{ color: color.brass, fontFamily: font.bodyBold }}>{s.streak.count}-day streak</Small> : null}
       </Row>
       <Title style={{ marginTop: space.xs }}>Today</Title>
+      {s.storageError ? (
+        <Plate tone="brass" style={{ marginTop: space.md }}>
+          <Small style={{ color: color.ink }}>{s.storageError}</Small>
+        </Plate>
+      ) : null}
       {week ? (
         <Small style={{ marginTop: space.xs }}>
           Week {week.index + 1} of {lastWeekNumber(s.plan)}

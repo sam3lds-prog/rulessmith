@@ -153,5 +153,9 @@ export function distinct(rng: Rng, count: number, make: () => string, tries = 50
   return [...seen];
 }
 
-/** Rule lens shows openly up to this level; above it, it costs a hint. */
+/**
+ * How v1 of the app decided support: the rule was shown openly up to this
+ * level. Kept only to read old saved data (state/migrate.ts). Support is now
+ * set per slot (engine/mixer.ts supportFor), independent of level.
+ */
 export const LENS_OPEN_MAX_LEVEL = 4;

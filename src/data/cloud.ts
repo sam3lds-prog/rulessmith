@@ -6,17 +6,23 @@
  * Sign-in is a 6-digit email code (no deep links). In the Supabase dashboard,
  * edit the "Magic Link" email template to include {{ .Token }}.
  *
- * Sync model: the device writes a snapshot of its state plus the attempt log.
- * On sign-in, whichever side has more answered puzzles wins; after that the
- * device pushes after each session. Minors never get an account (policy/age.ts).
+ * Sync model (see sync/merge.ts and state/store.ts `syncNow`):
+ * - attempts upload from an outbox and are acknowledged by id; they are never
+ *   overwritten or dropped, and pulls fetch only rows received since the last pull;
+ * - the snapshot (profile, plan, ledgers) is pulled, merged and pushed back, so
+ *   two devices converge instead of one overwriting the other.
+ * Minors never get an account (policy/age.ts).
  */
 import './polyfills';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
+import type { QueuedEvent } from '../analytics/track';
 import { config } from '../config';
 import type { Attempt } from '../engine/types';
-import type { ContentReport } from '../state/store';
+import { SNAPSHOT_VERSION, type Synced } from '../sync/merge';
+import { fromAttemptRow, pullFrom, toAttemptRow, toReportRow, type AttemptRow } from '../sync/rows';
+import type { ContentReport } from '../state/types';
 
 let client: SupabaseClient | null = null;
 
@@ -44,70 +50,131 @@ export async function verifyCode(email: string, token: string): Promise<{ ok: bo
   return { ok: true, userId: data.user.id };
 }
 
+/** The user id of the saved Supabase session, if any. */
+export async function sessionUserId(): Promise<string | undefined> {
+  const { data } = await supabase().auth.getSession();
+  return data.session?.user.id;
+}
+
 export async function signOut() {
-  await supabase().auth.signOut();
+  await supabase().auth.signOut({ scope: 'local' });
 }
 
-export interface RemoteState {
+// ------------------------------------------------------------------ snapshot
+
+export interface RemoteSnapshot {
   state: Record<string, unknown>;
-  attemptCount: number;
-  updatedAt: string;
+  /** Compare-and-set token: pass it back to pushSnapshot. */
+  version: number;
 }
 
-export async function pullState(userId: string): Promise<RemoteState | null> {
-  const { data, error } = await supabase().from('learner_state').select('state, attempt_count, updated_at').eq('user_id', userId).maybeSingle();
+export async function pullSnapshot(userId: string): Promise<RemoteSnapshot | null> {
+  const { data, error } = await supabase().from('learner_state').select('state, version').eq('user_id', userId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
-  return { state: data.state as Record<string, unknown>, attemptCount: data.attempt_count as number, updatedAt: data.updated_at as string };
+  return { state: data.state as Record<string, unknown>, version: Number(data.version ?? 0) };
 }
 
-export async function pushState(
-  userId: string,
-  ageBand: string,
-  state: Record<string, unknown>,
-  progress: number,
-  attempts: Attempt[],
-  since: number,
-) {
-  const db = supabase();
-  const fresh = attempts.filter((a) => a.at > since);
-  const { error } = await db.from('learner_state').upsert({
+/**
+ * Store the merged snapshot, but only if nobody else has since the pull
+ * (`expected` is the version pulled, or null if there was no row). Resolves
+ * false on a conflict: pull, merge and try again.
+ */
+export async function pushSnapshot(userId: string, ageBand: string, snapshot: Synced, attemptCount: number, expected: number | null): Promise<boolean> {
+  const row = {
     user_id: userId,
     age_band: ageBand,
-    state,
-    attempt_count: progress,
+    state: { v: SNAPSHOT_VERSION, ...snapshot },
+    attempt_count: attemptCount,
     updated_at: new Date().toISOString(),
-  });
-  if (error) throw new Error(error.message);
-  if (fresh.length) {
-    const rows = fresh.map((a) => ({
-      user_id: userId,
-      item_id: a.itemId,
-      skill_id: a.skillId,
-      family: a.family,
-      level: a.level,
-      transfer: a.transfer,
-      correct: a.correct,
-      hint_before_answer: a.hintBeforeAnswer,
-      ms: Math.round(a.ms),
-      mode: a.mode,
-      answered_at: new Date(a.at).toISOString(),
-    }));
-    const { error: e2 } = await db.from('attempts').upsert(rows, { onConflict: 'user_id,item_id,answered_at', ignoreDuplicates: true });
-    if (e2) throw new Error(e2.message);
+    version: (expected ?? 0) + 1,
+  };
+  if (expected === null) {
+    const { error } = await supabase().from('learner_state').insert(row);
+    if (error?.code === '23505') return false;
+    if (error) throw new Error(error.message);
+    return true;
   }
-  return fresh.length ? Math.max(...fresh.map((a) => a.at)) : since;
+  const { data, error } = await supabase().from('learner_state').update(row).eq('user_id', userId).eq('version', expected).select('version');
+  if (error) throw new Error(error.message);
+  return (data?.length ?? 0) > 0;
 }
 
-export async function pushReports(userId: string, reports: ContentReport[]) {
-  if (!reports.length) return;
+// ------------------------------------------------------------------ attempts
+
+const PAGE = 1000;
+
+/** Attempts received by the server since `cursor` (with an overlap), oldest first. Returns the new cursor. */
+export async function pullAttempts(userId: string, cursor: string | undefined): Promise<{ attempts: Attempt[]; cursor: string | undefined }> {
+  const from = pullFrom(cursor);
+  const out: Attempt[] = [];
+  let newest = cursor;
+  for (let page = 0; ; page++) {
+    let q = supabase().from('attempts').select('*').eq('user_id', userId);
+    if (from) q = q.gte('received_at', from);
+    const { data, error } = await q.order('received_at', { ascending: true }).order('attempt_id').range(page * PAGE, page * PAGE + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as AttemptRow[];
+    for (const r of rows) {
+      out.push(fromAttemptRow(r));
+      if (r.received_at && (!newest || r.received_at > newest)) newest = r.received_at;
+    }
+    if (rows.length < PAGE) break;
+  }
+  return { attempts: out, cursor: newest };
+}
+
+/** Upload attempts. Resolves with the ids the server now holds (new or already there). */
+export async function pushAttempts(userId: string, attempts: Attempt[]): Promise<string[]> {
+  const acked: string[] = [];
+  for (let i = 0; i < attempts.length; i += 500) {
+    const chunk = attempts.slice(i, i + 500);
+    const { error } = await supabase()
+      .from('attempts')
+      .upsert(chunk.map((a) => toAttemptRow(userId, a)), { onConflict: 'user_id,attempt_id', ignoreDuplicates: true });
+    if (error) throw new Error(error.message);
+    acked.push(...chunk.map((a) => a.id));
+  }
+  return acked;
+}
+
+// ------------------------------------------------------------------ reports, events, kill switch
+
+export async function pushReports(userId: string, reports: ContentReport[]): Promise<string[]> {
+  if (!reports.length) return [];
   const { error } = await supabase()
     .from('content_reports')
-    .upsert(
-      reports.map((r) => ({ user_id: userId, item_id: r.itemId, content_version: r.contentVersion, reason: r.reason, created_at: new Date(r.at).toISOString() })),
-      { onConflict: 'user_id,item_id,created_at', ignoreDuplicates: true },
-    );
+    .upsert(reports.map((r) => toReportRow(userId, r)), { onConflict: 'user_id,report_id', ignoreDuplicates: true });
   if (error) throw new Error(error.message);
+  return reports.map((r) => r.id);
+}
+
+/**
+ * Store a batch of analytics events through the `log_events` database function
+ * (idempotent by event id). Works signed out (anon key); the server keeps a
+ * user_id only when it is the caller's.
+ */
+export async function sendEvents(batch: QueuedEvent[]) {
+  const { error } = await supabase().rpc('log_events', {
+    batch: batch.map((e) => ({
+      id: e.id,
+      name: e.name,
+      props: e.props,
+      occurred_at: new Date(e.at).toISOString(),
+      install_id: e.installId ?? null,
+      user_id: e.userId ?? null,
+      age_band: e.ageBand ?? null,
+      content_version: e.contentVersion,
+    })),
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** The remote kill-switch list. Readable without an account. */
+export async function fetchDisabledTemplates(): Promise<string[]> {
+  const { data, error } = await supabase().from('disabled_templates').select('template_id');
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r) => r.template_id as string);
 }
 
 /** Deletes the auth user server-side (supabase/functions/delete-account); rows cascade. */

@@ -3,7 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { EXAMS, type ExamId } from '../../content/curriculum';
 import { addDays, dayKey } from '../../engine/time';
-import { SUBJECTS, type AgeBand, type Profile, type Role } from '../../engine/types';
+import type { AgeBand, Profile, Role } from '../../engine/types';
 import { policyFor } from '../../policy/age';
 import { useApp } from '../../state/store';
 import { Body, Button, Chip, Gap, Micro, OptionRow, Row, Screen, Small, Title } from '../../ui/kit';
@@ -33,7 +33,7 @@ const LEVELS: { r: 1 | 2 | 3 | 4 | 5; label: string; detail: string }[] = [
   { r: 5, label: 'Very strong', detail: 'I am polishing for a top score' },
 ];
 
-type Step = 'age' | 'role' | 'exams' | 'date' | 'goal' | 'level' | 'time' | 'subjects' | 'style';
+type Step = 'age' | 'role' | 'exams' | 'date' | 'goal' | 'level' | 'time' | 'style';
 
 export default function About() {
   const setProfile = useApp((s) => s.setProfile);
@@ -43,17 +43,17 @@ export default function About() {
   const [exams, setExams] = useState<ExamId[]>(existing?.exams ?? []);
   const [noExam, setNoExam] = useState(existing ? existing.exams.length === 0 : false);
   const [weeksOut, setWeeksOut] = useState<number | null | undefined>(undefined);
-  const [goalKind, setGoalKind] = useState<'score' | 'skill'>('score');
-  const [goalText, setGoalText] = useState('');
+  const [goalKind, setGoalKind] = useState<'score' | 'skill'>(existing?.goal.kind ?? 'score');
+  const [goalText, setGoalText] = useState(existing ? (existing.goal.kind === 'score' ? existing.goal.target : existing.goal.text) : '');
   const [levelKind, setLevelKind] = useState<'self' | 'score'>('self');
   const [selfRating, setSelfRating] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [lastScore, setLastScore] = useState('');
   const [minutes, setMinutes] = useState(existing?.minutesPerDay ?? 20);
   const [days, setDays] = useState(existing?.daysPerWeek ?? 4);
-  const [timed, setTimed] = useState(false);
-  const [reminders, setReminders] = useState(true);
+  const [timed, setTimed] = useState(existing?.style.timed ?? false);
 
-  const steps: Step[] = ['age', 'role', 'exams', ...(noExam ? [] : (['date'] as Step[])), 'goal', 'level', 'time', 'subjects', 'style'];
+  // Only questions whose answers the app uses. Reminders and other subjects come back when they exist.
+  const steps: Step[] = ['age', 'role', 'exams', ...(noExam ? [] : (['date'] as Step[])), 'goal', 'level', 'time', 'style'];
   const [i, setI] = useState(0);
   const step = steps[Math.min(i, steps.length - 1)];
   const minor = ageBand && !policyFor(ageBand).canPractice;
@@ -84,7 +84,7 @@ export default function About() {
       minutesPerDay: minutes,
       daysPerWeek: days,
       subjects: ['quant'],
-      style: { timed, reminders },
+      style: { timed },
       createdAt: existing?.createdAt ?? Date.now(),
     };
     setProfile(profile);
@@ -177,7 +177,7 @@ export default function About() {
         );
       case 'goal':
         return (
-          Q({ title: "What's your goal?", note: "Optional. It sets how hard the plan pushes.", children: (<>
+          Q({ title: "What's your goal?", note: "Optional. A note for you to keep in view. The plan is built from your exam, date and time, and it is foundations practice, not a score prediction.", children: (<>
             <Row>
               <Chip label="A target score" selected={goalKind === 'score'} onPress={() => setGoalKind('score')} />
               <Chip label="A skill to get comfortable with" selected={goalKind === 'skill'} onPress={() => setGoalKind('skill')} />
@@ -231,24 +231,11 @@ export default function About() {
             </View>
           </>) })
         );
-      case 'subjects':
-        return (
-          Q({ title: "Which subjects?", note: "Quant is ready now. The others are on the way.", children: (<>
-            <View style={styles.wrap}>
-              {SUBJECTS.map((s) => (
-                <Chip key={s.id} label={s.name} selected={s.available} disabled={!s.available} note={s.available ? undefined : 'Coming later'} />
-              ))}
-            </View>
-          </>) })
-        );
       case 'style':
         return (
           Q({ title: "How do you like to practise?", children: (<>
             <OptionRow label="Untimed first" detail="Understand it, then get fast" selected={!timed} onPress={() => setTimed(false)} />
             <OptionRow label="Timed drills" detail="Show a clock in Challenge runs" selected={timed} onPress={() => setTimed(true)} />
-            <Gap h={space.sm} />
-            <OptionRow label="Daily reminders on" selected={reminders} onPress={() => setReminders(true)} />
-            <OptionRow label="No reminders" selected={!reminders} onPress={() => setReminders(false)} />
           </>) })
         );
     }

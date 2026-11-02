@@ -29,7 +29,7 @@ export function packTracks(e: Entitlements): Set<TrackId> {
 }
 
 export function ownsChallenge(e: Entitlements, now: number): boolean {
-  return isPremium(e, now) || e.ownedPacks.includes('pack_challenge_700');
+  return isPremium(e, now) || e.ownedPacks.includes('pack_challenge_top');
 }
 
 /** Highest level served in normal sessions for a skill. */

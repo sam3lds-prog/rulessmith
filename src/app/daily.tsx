@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { Platform, Share, StyleSheet, Text } from 'react-native';
 import { ItemScreen } from '../boards/ItemScreen';
 import { APP_NAME } from '../config';
-import { generateItem } from '../content';
+import { serveItem } from '../content';
 import { dailyShareText } from '../engine/daily';
 import { dayKey } from '../engine/time';
 import { dailySlot, useApp } from '../state/store';
@@ -15,23 +15,45 @@ export default function Daily() {
   const day = dayKey(Date.now());
   const done = useApp((s) => s.daily[day]);
   const profile = useApp((s) => s.profile);
+  const flagsVersion = useApp((s) => s.flagsVersion);
   const recordDaily = useApp((s) => s.recordDaily);
+  const saveDailyProgress = useApp((s) => s.saveDailyProgress);
   const report = useApp((s) => s.report);
   const [playing, setPlaying] = useState(!done);
   const [copied, setCopied] = useState(false);
+  // The day's slot skips switched-off templates, so it is recomputed when the remote list changes.
   const item = useMemo(() => {
     const slot = dailySlot(day);
-    return generateItem(slot.templateId, slot.level, slot.seed);
-  }, [day]);
+    return slot ? serveItem(slot) : null;
+  }, [day, flagsVersion]);
+  // Read once on mount: saved work for today's puzzle, if any.
+  const [saved] = useState(() => {
+    const p = useApp.getState().dailyProgress;
+    return p && p.day === day ? p : undefined;
+  });
+
+  if (playing && !item) {
+    return (
+      <Screen footer={<Button title="Back to today" onPress={() => router.replace(profile ? '/today' : '/welcome')} />}>
+        <BackLink label="Today" />
+        <Title>No daily puzzle today</Title>
+        <Gap />
+        <Body>Today's puzzle has been taken down while we fix it. A new one arrives tomorrow.</Body>
+      </Screen>
+    );
+  }
 
   // Stay on the puzzle after answering so the verdict and explanation show; "See result" moves on.
-  if (playing) {
+  if (playing && item) {
     return (
       <ItemScreen
         key={item.id}
         item={item}
+        support="independent"
         header={<BackLink label="Today" />}
-        onAnswered={(a) => recordDaily(day, item, { correct: a.correct, hints: a.hintsUsed, ms: a.ms })}
+        initialProgress={saved}
+        onProgress={(p) => saveDailyProgress(day, p)}
+        onAnswered={({ result: _result, ...a }) => recordDaily(day, item, a)}
         onReport={(r) => report(item, r)}
         onContinue={() => setPlaying(false)}
         continueLabel="See result"

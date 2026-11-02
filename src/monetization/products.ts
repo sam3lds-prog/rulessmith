@@ -66,14 +66,18 @@ export const PRODUCTS: Product[] = [
     blurb: 'Every remainders skill, levels 1 to 7, unlimited runs. Yours to keep.',
   },
   {
-    id: 'pack_challenge_700',
+    // Named for difficulty, not a score: a pack name must never read like a score guarantee.
+    id: 'pack_challenge_top',
     type: 'non_consumable',
-    title: '700+ Challenge',
+    title: 'Hardest Levels Challenge',
     price: '$6.99',
     unlocksChallenge: true,
     blurb: 'The hardest puzzles, levels 8 to 10, in Challenge mode across every track.',
   },
 ];
+
+/** Old product ids still found in saved data, mapped to their current ids. */
+export const RENAMED_PRODUCTS: Record<string, string> = { pack_challenge_700: 'pack_challenge_top' };
 
 export const PRODUCT_BY_ID: Record<string, Product> = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]));
 

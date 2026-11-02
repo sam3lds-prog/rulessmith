@@ -5,13 +5,11 @@
  */
 import { evalExpr } from './evaluate';
 import { fmt, formatTuple } from './format';
-import { digitsFor, distinct, LENS_OPEN_MAX_LEVEL, ruleEval, sampleWhere } from './numbers';
+import { digitsFor, distinct, ruleEval, sampleWhere } from './numbers';
 import type { Rng } from './rng';
 import type { ChoiceOption, Claim, ItemDraft, NumPredicate, Response, ValueSpec } from './types';
 
 const OPTION_IDS = ['a', 'b', 'c', 'd', 'e'];
-
-export const showLensOpenly = (level: number) => level <= LENS_OPEN_MAX_LEVEL;
 
 // ---------------------------------------------------------------- sort
 
