@@ -62,17 +62,42 @@ export async function signOut() {
 
 // ------------------------------------------------------------------ snapshot
 
-export async function pullSnapshot(userId: string): Promise<Record<string, unknown> | null> {
-  const { data, error } = await supabase().from('learner_state').select('state').eq('user_id', userId).maybeSingle();
-  if (error) throw new Error(error.message);
-  return (data?.state as Record<string, unknown> | undefined) ?? null;
+export interface RemoteSnapshot {
+  state: Record<string, unknown>;
+  /** Compare-and-set token: pass it back to pushSnapshot. */
+  version: number;
 }
 
-export async function pushSnapshot(userId: string, ageBand: string, snapshot: Synced, attemptCount: number) {
-  const { error } = await supabase()
-    .from('learner_state')
-    .upsert({ user_id: userId, age_band: ageBand, state: { v: SNAPSHOT_VERSION, ...snapshot }, attempt_count: attemptCount, updated_at: new Date().toISOString() });
+export async function pullSnapshot(userId: string): Promise<RemoteSnapshot | null> {
+  const { data, error } = await supabase().from('learner_state').select('state, version').eq('user_id', userId).maybeSingle();
   if (error) throw new Error(error.message);
+  if (!data) return null;
+  return { state: data.state as Record<string, unknown>, version: Number(data.version ?? 0) };
+}
+
+/**
+ * Store the merged snapshot, but only if nobody else has since the pull
+ * (`expected` is the version pulled, or null if there was no row). Resolves
+ * false on a conflict: pull, merge and try again.
+ */
+export async function pushSnapshot(userId: string, ageBand: string, snapshot: Synced, attemptCount: number, expected: number | null): Promise<boolean> {
+  const row = {
+    user_id: userId,
+    age_band: ageBand,
+    state: { v: SNAPSHOT_VERSION, ...snapshot },
+    attempt_count: attemptCount,
+    updated_at: new Date().toISOString(),
+    version: (expected ?? 0) + 1,
+  };
+  if (expected === null) {
+    const { error } = await supabase().from('learner_state').insert(row);
+    if (error?.code === '23505') return false;
+    if (error) throw new Error(error.message);
+    return true;
+  }
+  const { data, error } = await supabase().from('learner_state').update(row).eq('user_id', userId).eq('version', expected).select('version');
+  if (error) throw new Error(error.message);
+  return (data?.length ?? 0) > 0;
 }
 
 // ------------------------------------------------------------------ attempts

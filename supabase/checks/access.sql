@@ -77,10 +77,24 @@ begin; set local role authenticated;
 select * from public.family_quality;
 rollback;
 
+\echo '--- 12a. snapshot compare-and-set: a stale version updates nothing (expect 0, then 1, then version 2)'
+begin; set local role authenticated; select set_config('request.jwt.claim.sub', :'A', true) \g /dev/null
+insert into public.learner_state (user_id, age_band, state, version) values (:'A', '18plus', '{"v":2}', 1);
+with u as (update public.learner_state set state = '{"v":2,"stale":true}', version = 1 where user_id = :'A' and version = 0 returning 1) select 'rows updated with a stale version: ' || count(*) from u;
+with u as (update public.learner_state set state = '{"v":2}', version = 2 where user_id = :'A' and version = 1 returning 1) select 'rows updated with the current version: ' || count(*) from u;
+select 'version now: ' || version from public.learner_state where user_id = :'A';
+commit;
+
+\echo '--- 12b. learner B cannot see or change A''s snapshot (expect 0, then 0)'
+begin; set local role authenticated; select set_config('request.jwt.claim.sub', :'B', true) \g /dev/null
+select 'B sees snapshots: ' || count(*) from public.learner_state;
+with u as (update public.learner_state set version = 99 where user_id = :'A' returning 1) select 'B updated: ' || count(*) from u;
+commit;
+
 \echo '--- 12. analyst view'
 \pset tuples_only off
 select family, level, template_version, attempts, independent_attempts, independent_success_rate, guided_success_rate, hint_rate, reports from public.family_quality order by 1, 2;
 
-\echo '--- 13. deleting the auth user cascades (expect 0 attempts, 0 identified events, 0 owned reports)'
+\echo '--- 13. deleting the auth user cascades (expect 0 attempts, 0 identified events, 0 owned reports, 0 snapshots)'
 delete from auth.users where id = :'A';
-select (select count(*) from public.attempts) as attempts, (select count(*) from public.events where user_id is not null) as identified_events, (select count(*) from public.content_reports where user_id is not null) as owned_reports;
+select (select count(*) from public.attempts) as attempts, (select count(*) from public.events where user_id is not null) as identified_events, (select count(*) from public.content_reports where user_id is not null) as owned_reports, (select count(*) from public.learner_state) as snapshots;

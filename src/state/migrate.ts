@@ -11,6 +11,7 @@
  * - Attempts and reports get stable ids. Tokens and finished sessions become
  *   ledgers. Unfinished-session slots get a support mode and template version.
  * - The "700+ Challenge" pack is renamed.
+ * - The migrated skill states become the baseline that later rebuilds start from.
  */
 import { parseItemId, templateVersionOf } from '../content';
 import { LENS_OPEN_MAX_LEVEL } from '../content/numbers';
@@ -137,6 +138,9 @@ export function migrateData(raw: Loose | undefined, version: number): Data {
       // v1 kept a bare PlacementState that no screen used; the check now saves its own progress.
       placement: undefined,
       placementRuns: [],
+      // v1 capped its attempt log and wrote placement ratings straight onto skills, so the log alone
+      // can't reproduce these states. Rebuilds start from them instead of erasing them.
+      baseline: Object.keys(skills).length ? { at: Date.now(), skills, covers: attempts.map((a) => a.id) } : undefined,
       outbox: {
         attempts: attempts.filter((a) => a.at > pushedUpTo).map((a) => a.id),
         reports: reports.slice(reportsPushed).map((r) => r.id),
@@ -169,6 +173,7 @@ export function migrateSnapshot(raw: Loose | null | undefined): Synced | undefin
     profile: s.profile,
     plan: s.plan,
     placementRuns: s.placementRuns ?? [],
+    baseline: s.baseline,
     tokenLedger: s.tokenLedger ?? [],
     sessionLog: s.sessionLog ?? [],
     daily: s.daily ?? {},

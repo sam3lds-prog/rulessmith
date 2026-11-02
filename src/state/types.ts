@@ -129,6 +129,19 @@ export interface PlacementRun {
   ratings: Record<string, number>;
 }
 
+/**
+ * Skill states carried over from saved data that predates the full attempt log
+ * (v1 capped its log at 400 and wrote placement ratings straight onto skills).
+ * Rebuilds start from these states and replay only the attempts not in `covers`,
+ * so that history is never erased.
+ */
+export interface Baseline {
+  at: number;
+  skills: States;
+  /** Attempt ids already reflected in `skills`. */
+  covers: string[];
+}
+
 /** The placement check in progress, so it survives a restart. */
 export interface PlacementProgress {
   state: PlacementState;
@@ -146,6 +159,8 @@ export interface Account {
   lastSyncAt?: number;
   /** Newest server receipt time already pulled (ISO). Pulls overlap it by a few minutes. */
   pullCursor?: string;
+  /** When this device first loaded the account's server copy. Until then, nothing made here may overwrite it. */
+  loadedAt?: number;
   syncError?: string;
   /** The saved sign-in is gone or belongs to someone else. Sync waits for the learner to sign in again. */
   needsSignIn?: boolean;
@@ -160,6 +175,7 @@ export interface Data {
   /** Ids not yet acknowledged by the server. Cleared only after a successful upload. */
   outbox: { attempts: string[]; reports: string[] };
   placementRuns: PlacementRun[];
+  baseline?: Baseline;
   tokenLedger: TokenEntry[];
   /** Derived from tokenLedger. */
   tokens: number;
@@ -200,6 +216,7 @@ export const INITIAL: Data = {
   lastRecap: undefined,
   triedPuzzle: undefined,
   dailyProgress: undefined,
+  baseline: undefined,
   skills: {},
   attempts: [],
   outbox: { attempts: [], reports: [] },

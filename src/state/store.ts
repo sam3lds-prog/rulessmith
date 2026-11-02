@@ -46,7 +46,7 @@ import type { Attempt, DisplayStatus, JourneyPlan, Profile, SessionMode, Slot } 
 import { grant, isPremium, maxLevelFor, ownsChallenge, runsAreUnlimited, runsLeftToday } from '../monetization/entitlements';
 import { createTestProvider } from '../monetization/purchases';
 import { TOKEN_COSTS, TOKEN_REWARDS } from '../monetization/tokens';
-import { applyPlacementRun, derived, importGuest, mergeRemote, pickSynced } from '../sync/merge';
+import { applyPlacementRun, derived, importGuest, mergeRemote, pickSynced, type Synced } from '../sync/merge';
 import { clearBucket, createSaver, GUEST, openAtLaunch, OWNER_KEY, readBucket, writeBucket, type KV } from './buckets';
 import { migrateSnapshot } from './migrate';
 import {
@@ -137,6 +137,8 @@ interface Runtime {
   owner: string;
   /** Bumped when the kill-switch list changes, so screens re-check what they show. */
   flagsVersion: number;
+  /** The last save to this device failed. */
+  storageError?: string;
 }
 
 export type AppState = Data & Actions & Runtime;
@@ -171,9 +173,18 @@ const deviceKeys = (s: Partial<Data>) => {
 
 const timeout = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** Help just taken (or a puzzle just opened) is saved at once rather than after the usual short delay. */
+const isUrgent = (prev: ItemProgress | undefined, next: ItemProgress) =>
+  !prev || prev.itemId !== next.itemId || next.hints > prev.hints || (next.ruleRevealed && !prev.ruleRevealed);
+
 /** The bucket being saved to. Null until launch has opened one, so nothing is written before then. */
 let saverOwner: string | null = null;
-const saver = createSaver(kv, () => ({ owner: saverOwner, data: pickData(useApp.getState()) }));
+const saver = createSaver(kv, () => ({ owner: saverOwner, data: pickData(useApp.getState()) }), {
+  onError: (e) => {
+    const storageError = e ? 'Your progress could not be saved on this device. Free up some storage space; the app will keep trying.' : undefined;
+    if (useApp.getState().storageError !== storageError) useApp.setState({ storageError });
+  },
+});
 
 export const useApp = create<AppState>()((set, get) => {
   const maxLevel = (skillId: string) => maxLevelFor(skillId, get().entitlements, Date.now());
@@ -307,15 +318,25 @@ export const useApp = create<AppState>()((set, get) => {
         setAccount({ needsSignIn: true, syncError: 'Sign in again to sync. Your progress is saved on this device.' });
         return none;
       }
-      // 1. Pull and merge by id.
-      const [snapshot, pulled] = await Promise.all([cloud.pullSnapshot(userId), cloud.pullAttempts(userId, acct.pullCursor)]);
+      // 1. Pull and merge by id. Repeated if another device stores its snapshot between our pull and push.
+      let cursor = acct.pullCursor;
+      let newFromServer = 0;
+      const pullAndMerge = async () => {
+        const [snapshot, pulled] = await Promise.all([cloud.pullSnapshot(userId), cloud.pullAttempts(userId, cursor)]);
+        if (get().owner !== userId) return null;
+        const before = get().attempts.length;
+        const { data } = mergeRemote(pickData(get()), { synced: migrateSnapshot(snapshot?.state), attempts: pulled.attempts });
+        cursor = pulled.cursor;
+        set({ ...data, account: { ...get().account, pullCursor: cursor, loadedAt: get().account.loadedAt ?? Date.now() } });
+        newFromServer += get().attempts.length - before;
+        return snapshot;
+      };
+      let snapshot = await pullAndMerge();
       if (get().owner !== userId) return none;
-      const before = get().attempts.length;
-      const { data } = mergeRemote(pickData(get()), { synced: migrateSnapshot(snapshot), attempts: pulled.attempts });
-      set({ ...data, account: { ...get().account, pullCursor: pulled.cursor } });
-      const newFromServer = get().attempts.length - before;
+      const hadSnapshot = snapshot !== null;
 
-      // 2. Upload the outbox. Ids leave it only when the server has them.
+      // 2. Upload the outbox. Ids leave it only when the server has them. Answers given while
+      //    this upload is in flight stay in the outbox for the next sync.
       const cur = get();
       const known = new Map(cur.attempts.map((a) => [a.id, a]));
       const pending = cur.outbox.attempts.map((id) => known.get(id)).filter((a): a is Attempt => !!a);
@@ -324,19 +345,33 @@ export const useApp = create<AppState>()((set, get) => {
       const pendingReports = cur.outbox.reports.map((id) => reportById.get(id)).filter((r) => !!r);
       const ackedReports = new Set(await cloud.pushReports(userId, pendingReports as NonNullable<(typeof pendingReports)[number]>[]));
       if (get().owner !== userId) return none;
-      const o = get().outbox;
+      const now = get();
+      const haveAttempt = new Set(now.attempts.map((a) => a.id));
+      const haveReport = new Set(now.reports.map((r) => r.id));
       set({
         outbox: {
-          attempts: o.attempts.filter((id) => !acked.has(id) && known.has(id)),
-          reports: o.reports.filter((id) => !ackedReports.has(id) && reportById.has(id)),
+          attempts: now.outbox.attempts.filter((id) => !acked.has(id) && haveAttempt.has(id)),
+          reports: now.outbox.reports.filter((id) => !ackedReports.has(id) && haveReport.has(id)),
         },
       });
 
-      // 3. Push the merged snapshot back.
-      const fresh = get();
-      if (fresh.profile) await cloud.pushSnapshot(userId, fresh.profile.ageBand, pickSynced(fresh), fresh.attempts.length);
-      setAccount({ lastSyncAt: Date.now(), syncError: undefined, needsSignIn: false });
-      return { ok: true, pulled: newFromServer, hadSnapshot: snapshot !== null };
+      // 3. Push the merged snapshot back, only if nobody else has since our pull; otherwise pull, merge and retry.
+      let stored = !get().profile;
+      for (let round = 0; round < 3 && !stored; round++) {
+        if (round > 0) {
+          snapshot = await pullAndMerge();
+          if (get().owner !== userId) return none;
+        }
+        const fresh = get();
+        if (!fresh.profile) break;
+        stored = await cloud.pushSnapshot(userId, fresh.profile.ageBand, pickSynced(fresh), fresh.attempts.length, snapshot ? snapshot.version : null);
+      }
+      setAccount(
+        stored
+          ? { lastSyncAt: Date.now(), syncError: undefined, needsSignIn: false }
+          : { needsSignIn: false, syncError: 'Another device is syncing this account. Your answers are uploaded; the rest syncs next time.' },
+      );
+      return { ok: stored, pulled: newFromServer, hadSnapshot };
     } catch (e) {
       setAccount({ syncError: e instanceof Error ? e.message : 'Sync failed' });
       return none;
@@ -394,7 +429,9 @@ export const useApp = create<AppState>()((set, get) => {
     },
     savePlacementProgress: (p) => {
       const pl = get().placement;
-      if (pl && !pl.answered) set({ placement: { ...pl, progress: p } });
+      if (!pl || pl.answered) return;
+      set({ placement: { ...pl, progress: p } });
+      if (isUrgent(pl.progress, p)) void saver.flush();
     },
     answerPlacement: (item, r) => {
       const pl = get().placement;
@@ -544,6 +581,7 @@ export const useApp = create<AppState>()((set, get) => {
       const a = get().active;
       if (!a || a.results.length > a.index) return;
       set({ active: { ...a, progress: p } });
+      if (isUrgent(a.progress, p)) void saver.flush();
     },
 
     recordAnswer: (item, r) => {
@@ -685,7 +723,9 @@ export const useApp = create<AppState>()((set, get) => {
 
     saveDailyProgress: (day, p) => {
       if (get().daily[day]) return;
+      const prev = get().dailyProgress;
       set({ dailyProgress: { ...p, day } });
+      if (isUrgent(prev?.day === day ? prev : undefined, p)) void saver.flush();
     },
 
     recordDaily: (day, item, r) => {
@@ -758,6 +798,11 @@ export const useApp = create<AppState>()((set, get) => {
       const acct = get().account;
       if (acct.mode === 'cloud') {
         try {
+          // The server deletes whoever the saved sign-in belongs to. Make sure that is this learner
+          // (another tab or window may have signed in as someone else).
+          if ((await cloud.sessionUserId()) !== acct.userId) {
+            return { ok: false, error: `Sign in again as ${acct.email ?? 'this account'} to delete it. Nothing was deleted.` };
+          }
           await cloud.deleteAccount();
         } catch (e) {
           return { ok: false, error: e instanceof Error ? e.message : 'Could not delete the account. Check your connection and try again.' };
@@ -782,26 +827,51 @@ export const useApp = create<AppState>()((set, get) => {
       try {
         const fromGuest = get().owner === GUEST;
         const guest = pickData(get());
-        const existing = fromGuest ? await readBucket(kv, userId) : pickData(get());
+        const local = fromGuest ? await readBucket(kv, userId) : pickData(get());
+        // An account opened on this device for the first time starts from the server's copy. Until it is
+        // loaded, nothing made here (a guest's plan, or onboarding after a failed first sync) could be told
+        // apart from a newer plan, so the account isn't opened without it.
+        let remote: { synced?: Synced; attempts: Attempt[]; cursor?: string } | null = null;
+        if (!local?.account.loadedAt) {
+          try {
+            const [snapshot, pulled] = await Promise.all([cloud.pullSnapshot(userId), cloud.pullAttempts(userId, undefined)]);
+            remote = { synced: migrateSnapshot(snapshot?.state), attempts: pulled.attempts, cursor: pulled.cursor };
+          } catch {
+            return { ok: false, restored: false, error: "You're signed in, but your account couldn't be loaded. Check your connection and try again." };
+          }
+        }
         await switchOwner(userId);
         let cur = pickData(get());
+        if (remote) cur = { ...mergeRemote(cur, remote).data, account: { ...cur.account, pullCursor: remote.cursor, loadedAt: Date.now() } };
+        const hadAccountData = Boolean(cur.plan || cur.profile || cur.attempts.length);
         if (opts.importGuest && fromGuest) {
+          // The account's own profile and plan (loaded above) win; everything else is added.
           cur = importGuest(cur, guest);
           track('guest_imported', { answers: guest.attempts.length, plan: Boolean(guest.plan) });
         }
         const prev = cur.account;
+        const same = prev.userId === userId || prev.userId === undefined;
         set({
           ...cur,
-          account: { mode: 'cloud', email, userId, savedAt: Date.now(), lastSyncAt: prev.userId === userId ? prev.lastSyncAt : undefined, pullCursor: prev.userId === userId ? prev.pullCursor : undefined },
+          account: {
+            mode: 'cloud',
+            email,
+            userId,
+            savedAt: Date.now(),
+            lastSyncAt: same ? prev.lastSyncAt : undefined,
+            pullCursor: same ? prev.pullCursor : undefined,
+            loadedAt: same ? prev.loadedAt : undefined,
+          },
         });
         if (opts.importGuest && fromGuest) {
-          // The guest's progress now lives in the account. Leave an empty guest behind so it can't be imported twice.
-          await writeBucket(kv, GUEST, freshLearner(guest));
+          // Save the account with the guest's progress in it before emptying the guest, so a crash in
+          // between can't lose it. If this save fails, the guest is left as it was.
+          await saver.flush();
+          if (!get().storageError) await writeBucket(kv, GUEST, freshLearner(guest));
         }
         track('plan_saved', { mode: 'cloud', imported: opts.importGuest });
         const r = await get().syncNow();
-        const restored = Boolean(existing?.plan || existing?.attempts.length) || r.pulled > 0 || r.hadSnapshot;
-        return { ok: true, restored, error: r.ok ? undefined : get().account.syncError };
+        return { ok: true, restored: hadAccountData || r.pulled > 0 || r.hadSnapshot, error: r.ok ? undefined : get().account.syncError };
       } catch (e) {
         return { ok: false, restored: false, error: e instanceof Error ? e.message : 'Sync failed' };
       }

@@ -27,6 +27,12 @@ export default function Placement() {
   const slotKey = slot ? `${slot.templateId}@${slot.level}#${slot.seed}/v${slot.version}` : '';
   const item = useMemo(() => placementItem(), [slotKey, flagsVersion]);
 
+  // Resumed after answering but before tapping Next: the answer is already recorded, so move on
+  // rather than show the puzzle again as if it were unanswered.
+  useEffect(() => {
+    if (useApp.getState().placement?.answered && next().done) router.replace('/onboarding/plan');
+  }, []);
+
   // A puzzle that was switched off (or changed by an app update) while the check was paused is replaced.
   useEffect(() => {
     if (placement && slot && !item && !placement.answered) replaceSlot();

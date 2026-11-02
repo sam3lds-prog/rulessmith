@@ -1550,9 +1550,9 @@ Verdict: Approve / Fix (say what) / Retire. Reviewer: ______ Date: ______
 
 Build to spec. Board: numeric.
 
-#### Level 4 `div.build/count@4#20261106`
+#### Level 1 `div.build/count@1#20261103`
 
-**Prompt.** In how many ways can you fill the two blanks in 7_8_ so the number is divisible by 3 and by 4?
+**Prompt.** In how many ways can you fill the two blanks in 8_4_ so the number is divisible by 3 and by 4?
 
 **Rule.** Handle one condition at a time: fix the last digits for 2, 4, 5 or 8 first, then adjust the digit sum for 3 or 9.
 
@@ -1566,21 +1566,21 @@ Build to spec. Board: numeric.
 
 **Explanation.** Working digit by digit gives 10 combinations.
 
-#### Level 7 `div.build/count@7#20261109`
+#### Level 6 `div.build/count@6#20261108`
 
-**Prompt.** In how many ways can you fill the two blanks in 724__ so the number is divisible by 5 and by 9?
+**Prompt.** In how many ways can you fill the two blanks in 844__ so the number is divisible by 9 but not by 2?
 
 **Rule.** Handle one condition at a time: fix the last digits for 2, 4, 5 or 8 first, then adjust the digit sum for 3 or 9.
 
 - Type a whole number
 
-**Answer (from the checker).** 3
+**Answer (from the checker).** 5
 
 **Hints.**
 1. Count the last-digit choices first.
 2. For each one, count how many middle digits fix the digit sum.
 
-**Explanation.** Working digit by digit gives 3 combinations.
+**Explanation.** Working digit by digit gives 5 combinations.
 
 #### Level 10 `div.build/count@10#20261112`
 

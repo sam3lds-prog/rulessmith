@@ -11,13 +11,18 @@ import type { Attempt } from '../engine/types';
 const h = vi.hoisted(() => {
   const g = globalThis as Record<string, any>;
   g.__mem = new Map<string, string>();
+  g.__failWrite = null as null | ((key: string) => boolean);
   g.__server = {
     session: undefined as string | undefined,
     snapshots: new Map<string, any>(),
+    versions: new Map<string, number>(),
     attempts: new Map<string, { attempt: any; receivedAt: string }[]>(),
     failPush: false,
     disabled: [] as string[],
     tick: 0,
+    duringPush: null as null | (() => void),
+    failPull: false,
+    beforeSnapshotPush: null as null | (() => void),
   };
   return { mem: g.__mem as Map<string, string>, server: g.__server };
 });
@@ -32,7 +37,11 @@ vi.mock('@react-native-async-storage/async-storage', () => {
   return {
     default: {
       getItem: async (k: string) => mem.get(k) ?? null,
-      setItem: async (k: string, v: string) => void mem.set(k, v),
+      setItem: async (k: string, v: string) => {
+        const fail = (globalThis as Record<string, any>).__failWrite as null | ((key: string) => boolean);
+        if (fail?.(k)) throw new Error('QuotaExceededError');
+        mem.set(k, v);
+      },
       removeItem: async (k: string) => void mem.delete(k),
     },
   };
@@ -47,8 +56,20 @@ vi.mock('../data/cloud', () => {
     cloudConfigured: () => true,
     sessionUserId: async () => s.session,
     signOut: async () => void (s.session = undefined),
-    pullSnapshot: async (u: string) => (s.snapshots.has(u) ? clone(s.snapshots.get(u)) : null),
-    pushSnapshot: async (u: string, _age: string, snap: unknown) => void s.snapshots.set(u, { v: 2, ...clone(snap as object) }),
+    pullSnapshot: async (u: string) => {
+      if (s.failPull) throw new Error('Network request failed');
+      return s.snapshots.has(u) ? { state: clone(s.snapshots.get(u)), version: s.versions.get(u) ?? 0 } : null;
+    },
+    pushSnapshot: async (u: string, _age: string, snap: unknown, _n: number, expected: number | null) => {
+      const hook = s.beforeSnapshotPush;
+      s.beforeSnapshotPush = null;
+      hook?.();
+      const current = s.snapshots.has(u) ? (s.versions.get(u) ?? 0) : null;
+      if (current !== expected) return false;
+      s.snapshots.set(u, { v: 2, ...clone(snap as object) });
+      s.versions.set(u, (expected ?? 0) + 1);
+      return true;
+    },
     pullAttempts: async (u: string, cursor?: string) => {
       const list = s.attempts.get(u) ?? [];
       const from = cursor ? Date.parse(cursor) - 600000 : -Infinity;
@@ -60,6 +81,9 @@ vi.mock('../data/cloud', () => {
       const list = s.attempts.get(u) ?? [];
       for (const a of attempts) if (!list.some((r: { attempt: Attempt }) => r.attempt.id === a.id)) list.push({ attempt: clone(a), receivedAt: new Date(Date.now() + s.tick++).toISOString() });
       s.attempts.set(u, list);
+      const hook = s.duringPush;
+      s.duringPush = null;
+      hook?.();
       return attempts.map((a) => a.id);
     },
     pushReports: async (_u: string, r: { id: string }[]) => r.map((x) => x.id),
@@ -159,6 +183,11 @@ beforeEach(() => {
   h.mem.clear();
   h.server.session = undefined;
   h.server.snapshots.clear();
+  h.server.versions.clear();
+  h.server.duringPush = null;
+  h.server.beforeSnapshotPush = null;
+  h.server.failPull = false;
+  (globalThis as Record<string, any>).__failWrite = null;
   h.server.attempts.clear();
   h.server.failPush = false;
   h.server.disabled = [];
@@ -213,6 +242,65 @@ describe('one learner per bucket', () => {
     await m.useApp.getState().disconnectCloud();
     expect(m.useApp.getState().attempts.length).toBe(guestAnswers);
     expect(m.useApp.getState().profile).toBeDefined();
+  });
+
+  it("importing on a second device keeps the account's own plan", async () => {
+    // Device 1 made the account with a 45-minute plan.
+    let m = await launch();
+    m.useApp.getState().setProfile({ ...ADULT, minutesPerDay: 45 });
+    m.useApp.getState().finishPlacement(true);
+    h.server.session = 'user-a';
+    await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    const accountPlan = m.useApp.getState().plan!.createdAt;
+    expect(h.server.snapshots.get('user-a').profile.minutesPerDay).toBe(45);
+
+    // Device 2: fresh storage, onboards with 10 minutes, then signs in and adds its progress.
+    h.mem.clear();
+    m = await launch();
+    m.useApp.getState().setProfile({ ...ADULT, minutesPerDay: 10 });
+    m.useApp.getState().finishPlacement(true);
+    playSkillSession(m);
+    const guestAnswers = m.useApp.getState().attempts.length;
+    await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    const s = m.useApp.getState();
+    expect(s.profile?.minutesPerDay).toBe(45);
+    expect(s.plan?.createdAt).toBe(accountPlan);
+    expect(s.attempts.length).toBe(guestAnswers);
+    expect(h.server.snapshots.get('user-a').profile.minutesPerDay).toBe(45);
+  });
+
+  it("an account isn't opened on a new device until its server copy has loaded", async () => {
+    const m = await launch();
+    onboard(m);
+    playSkillSession(m);
+    const before = m.useApp.getState().attempts.length;
+    h.server.session = 'user-a';
+    h.server.failPull = true;
+    const r = await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/couldn't be loaded/);
+    expect(m.useApp.getState().owner).toBe('guest');
+    expect(m.useApp.getState().attempts.length).toBe(before);
+    // Back online: trying again works.
+    h.server.failPull = false;
+    expect((await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true })).ok).toBe(true);
+    expect(m.useApp.getState().owner).toBe('user-a');
+    expect(m.useApp.getState().attempts.length).toBe(before);
+  });
+
+  it('if the account could not be saved, the guest is not emptied', async () => {
+    const m = await launch();
+    onboard(m);
+    playSkillSession(m);
+    await m.flushSaves();
+    const answers = m.useApp.getState().attempts.length;
+    h.server.session = 'user-a';
+    (globalThis as Record<string, any>).__failWrite = (k: string) => k.startsWith('rulesmith:user:');
+    await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    expect(m.useApp.getState().storageError).toMatch(/could not be saved/);
+    const guest = JSON.parse(h.mem.get('rulesmith:guest:attempts')!);
+    expect(guest.attempts.length).toBe(answers);
+    (globalThis as Record<string, any>).__failWrite = null;
   });
 
   it('after an import the guest is empty, so the same progress cannot be imported twice', async () => {
@@ -313,6 +401,48 @@ describe('sync merges by attempt id', () => {
     expect(s.account.syncError).toBeUndefined();
   });
 
+  it('an answer given while an upload is in flight stays in the outbox and goes up next time', async () => {
+    const m = await launch();
+    onboard(m);
+    h.server.session = 'user-a';
+    await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    m.useApp.getState().startSession('skill', { skillId: 'div.digit-sum' });
+    answer(m);
+    m.useApp.getState().advance();
+    let lateId = '';
+    h.server.duringPush = () => {
+      answer(m);
+      lateId = m.useApp.getState().attempts.at(-1)!.id;
+    };
+    await m.useApp.getState().syncNow();
+    expect(lateId).not.toBe('');
+    expect(m.useApp.getState().outbox.attempts).toEqual([lateId]);
+    await m.useApp.getState().syncNow();
+    expect(m.useApp.getState().outbox.attempts).toEqual([]);
+    expect(h.server.attempts.get('user-a')!.some((r: { attempt: Attempt }) => r.attempt.id === lateId)).toBe(true);
+  });
+
+  it('two devices storing the snapshot at the same moment keep both sets of entries', async () => {
+    const m = await launch();
+    onboard(m);
+    h.server.session = 'user-a';
+    await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    playSkillSession(m);
+    // Another device stores its own snapshot between this device's pull and push.
+    h.server.beforeSnapshotPush = () => {
+      const other = JSON.parse(JSON.stringify(h.server.snapshots.get('user-a')));
+      other.tokenLedger.push({ id: 'session-other-device', delta: 5, reason: 'session', at: Date.now() - 1000 });
+      h.server.snapshots.set('user-a', other);
+      h.server.versions.set('user-a', (h.server.versions.get('user-a') ?? 0) + 1);
+    };
+    const mine = m.useApp.getState().tokenLedger.map((e) => e.id);
+    expect((await m.useApp.getState().syncNow()).ok).toBe(true);
+    const ids = h.server.snapshots.get('user-a').tokenLedger.map((e: { id: string }) => e.id);
+    expect(ids).toContain('session-other-device');
+    for (const id of mine) expect(ids).toContain(id);
+    expect(m.useApp.getState().tokenLedger.map((e) => e.id)).toContain('session-other-device');
+  });
+
   it('an expired sign-in stops sync instead of writing to the wrong account', async () => {
     const m = await launch();
     onboard(m);
@@ -365,6 +495,18 @@ describe('the learning record', () => {
     const a = m.useApp.getState().active!;
     expect(a.progress).toEqual({ itemId: item.id, draft: null, hints: 1, ruleRevealed: true, firstSeenAt: 111, activeMs: 9000 });
     expect(m.useApp.getState().currentItem()!.id).toBe(item.id);
+  });
+
+  it('a hint is saved at once, not after the usual short delay', async () => {
+    const m = await launch();
+    onboard(m);
+    m.useApp.getState().startSession('skill', { skillId: 'div.digit-sum' });
+    const item = m.useApp.getState().currentItem()!;
+    m.useApp.getState().saveProgress({ itemId: item.id, draft: null, hints: 0, ruleRevealed: false, firstSeenAt: 1, activeMs: 0 });
+    await new Promise((r) => setTimeout(r, 0));
+    m.useApp.getState().saveProgress({ itemId: item.id, draft: null, hints: 1, ruleRevealed: false, firstSeenAt: 1, activeMs: 500 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(JSON.parse(h.mem.get('rulesmith:guest')!).state.active.progress.hints).toBe(1);
   });
 
   it('a placement check resumes where it stopped', async () => {
@@ -449,9 +591,65 @@ describe('saved data from before these fixes', () => {
     expect(s.outbox.attempts).toEqual([s.attempts[0].id]);
     expect(s.entitlements.ownedPacks).toEqual(['pack_challenge_top']);
   });
+
+  it('keeps carried-over progress when skills are rebuilt (import, or answers from another device)', async () => {
+    const at = Date.now() - 5 * 86400000;
+    const evidence = Array.from({ length: 6 }, (_, i) => ({ correct: true, family: 'div.last-digit/sort', transfer: false, day: 'd1', level: 6, at }));
+    const v1 = {
+      version: 1,
+      state: {
+        profile: ADULT,
+        // Practicing from answers older than the capped log, and a placement rating written straight onto a skill.
+        skills: {
+          'div.last-digit': { skillId: 'div.last-digit', rating: 1250, attempts: 30, evidence, status: 'practicing', reviewStage: 0 },
+          'pf.primes': { skillId: 'pf.primes', rating: 1400, attempts: 0, evidence: [], status: 'new', reviewStage: 0 },
+        },
+        attempts: [],
+        account: { mode: 'device' },
+      },
+    };
+    h.mem.set('rulesmith-v1', JSON.stringify(v1));
+    const m = await launch();
+    h.server.session = 'user-a';
+    await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    let s = m.useApp.getState();
+    expect(s.skills['div.last-digit'].status).toBe('practicing');
+    expect(s.skills['pf.primes'].rating).toBe(1400);
+    // Another device's answer arrives: the rebuild starts from the carried-over states.
+    h.server.attempts.set('user-a', [
+      {
+        attempt: {
+          id: 'other-1', itemId: 'div.last-digit/sort@3#1', templateId: 'div.last-digit/sort', templateVersion: 1, contentVersion: 'x',
+          skillId: 'div.last-digit', family: 'div.last-digit/sort', level: 3, transfer: false, support: 'independent', correct: true,
+          hintBeforeAnswer: false, hintsUsed: 0, ruleShown: false, ms: 1000, at: Date.now() - 1000, mode: 'skill',
+        },
+        receivedAt: new Date(Date.now() + 60000).toISOString(),
+      },
+    ]);
+    await m.useApp.getState().syncNow();
+    s = m.useApp.getState();
+    expect(s.skills['div.last-digit'].status).toBe('practicing');
+    expect(s.skills['div.last-digit'].attempts).toBe(31);
+    expect(s.skills['pf.primes'].rating).toBe(1400);
+  });
 });
 
 describe('deleting', () => {
+  it("won't delete an account the saved sign-in doesn't belong to", async () => {
+    const m = await launch();
+    onboard(m);
+    h.server.session = 'user-a';
+    await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    // Another tab signed in as someone else.
+    h.server.session = 'user-b';
+    h.server.attempts.set('user-b', []);
+    const r = await m.useApp.getState().deleteAllData();
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/Nothing was deleted/);
+    expect(h.server.attempts.has('user-b')).toBe(true);
+    expect(m.useApp.getState().profile).toBeDefined();
+  });
+
   it('removes the account and everything saved on the device', async () => {
     const m = await launch();
     onboard(m);

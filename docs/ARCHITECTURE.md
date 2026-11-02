@@ -57,25 +57,29 @@ Details of the content workflow are in `CONTENT.md`.
 
 Local-first. One zustand store (`store.ts`) holds the open learner's data (`types.ts` `Data`): profile, plan, skill states, the attempt log, the outbox, ledgers, the active session and the puzzle in progress, placement in progress, daily results, reports and account.
 
-**One bucket per learner** (`buckets.ts`). The guest on this device and each signed-in account are saved under separate keys; `rulesmith:owner` says which is open. Signing out closes the account's bucket and opens the guest's, so the previous learner never stays on screen; signing in does the reverse. Only device-level keys (`runs`, `entitlements`, `settings`) cross over. A guest's progress joins an account only when the learner chooses "Add it to my account" at sign-in (`sync/merge.ts` `importGuest`); the guest bucket is then emptied so it can't be imported twice. Saves are coalesced (300 ms) and flushed when the app goes to the background and before any switch; the attempt log is written to its own key only when it changes.
+**One bucket per learner** (`buckets.ts`). The guest on this device and each signed-in account are saved under separate keys; `rulesmith:owner` says which is open. Signing out closes the account's bucket and opens the guest's, so the previous learner never stays on screen; signing in does the reverse. Only device-level keys (`runs`, `entitlements`, `settings`) cross over. A guest's progress joins an account only when the learner chooses "Add it to my account" at sign-in (`sync/merge.ts` `importGuest`); the guest bucket is then emptied so it can't be imported twice. Saves are coalesced (300 ms), flushed at once when a hint is taken or a rule revealed, when the app goes to the background, and before any switch. The attempt log and its outbox are one write, made before the rest; if it fails nothing else is written, the learner sees a notice on Today, and the save is retried. If the app stops between the two writes, launch notices the skills are behind the log and rebuilds them.
 
 **The attempt log is the learning record.** Each graded answer is an `Attempt` with a stable id, the response, the misconception from the checker, the template and content versions, support mode, hints, whether the rule was shown, first-seen time and active (foreground) time. It is not capped. Skill states are updated live from each attempt and can be rebuilt by replaying the log (`rebuildSkills`), which gives exactly the live result.
 
 **Nothing is lost on interruption.** The puzzle on screen saves its board draft, hints, a revealed rule, first-seen time and active time as the learner works (`ItemProgress`: in the active session, the placement check and the daily puzzle). After a refresh, background or force-close it comes back exactly as it was, so a hint opened before the crash is still a hint. A slot is graded once; a resumed, answered slot is skipped.
 
-**Migrations** (`migrate.ts`). v1 saved everything under `rulesmith-v1`. At first launch it moves into the right bucket. Answers at levels 1 to 4, where v1 showed the rule openly, become guided; a Secure status that rested on them goes back to Practicing.
+**Migrations** (`migrate.ts`). v1 saved everything under `rulesmith-v1`. At first launch it moves into the right bucket. Answers at levels 1 to 4, where v1 showed the rule openly, become guided; a Secure status that rested on them goes back to Practicing. v1 capped its log and wrote placement ratings straight onto skills, so the migrated skill states become a **baseline**: rebuilds start from it and replay only the attempts it doesn't cover, so old progress is never erased.
 
 ## Sync (`src/sync`, `src/data/cloud.ts`)
 
-Only for signed-in adults with Supabase configured. Each sync (after a session, a daily puzzle, at launch and on returning to the foreground):
+Only for signed-in adults with Supabase configured.
+
+**Signing in on a device for the first time** loads the account's server copy before the account's bucket is opened. If it can't be loaded (offline), sign-in stops and the guest keeps its progress, so nothing made on this device (a guest's plan, or onboarding after a failed first load) can be mistaken for newer than the account's own plan. A guest import then adds the guest's answers and ledgers, but the account's profile and plan win; the account is saved before the guest is emptied.
+
+Each sync (after a session, a daily puzzle, at launch and on returning to the foreground):
 
 1. Checks the saved Supabase session belongs to the open bucket's account; if not, it stops and asks the learner to sign in again.
 2. Pulls the snapshot (`learner_state`) and attempts received since the last pull (`received_at`, stamped by the server, with a 10-minute overlap so a late commit is never skipped).
 3. Merges by id (`mergeRemote`): attempts are a union; tokens and sessions are ledgers (balance, session count and streak are recomputed from them); daily results, checkpoints and placement runs merge by key; ladder bests keep the maximum; profile and plan keep the newer copy. If attempts arrived from elsewhere, skills are rebuilt from the whole log. No side "wins" by having more puzzles.
-4. Uploads the outbox (attempts and reports not yet acknowledged). Ids leave the outbox only after the server has them; uploads are idempotent (`on conflict do nothing`).
-5. Pushes the merged snapshot back.
+4. Uploads the outbox (attempts and reports not yet acknowledged). Ids leave the outbox only after the server has them; anything answered during the upload stays for next time. Uploads are idempotent (`on conflict do nothing`).
+5. Pushes the merged snapshot back with compare-and-set on `learner_state.version`: if another device stored its snapshot since the pull, it pulls, merges and retries (up to three times).
 
-Two devices on one account converge: each keeps its own entries until the server has them, and every merge is a union.
+Two devices on one account converge: each keeps its own entries until the server has them, every merge is a union, and neither can overwrite the other's snapshot. "Delete my data" checks the saved sign-in belongs to the open account before deleting anything.
 
 ## Kill switch (`src/data/flags.ts`)
 

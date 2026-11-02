@@ -904,7 +904,8 @@ const buildCount: Template = {
   skillId: 'div.build',
   board: 'numeric',
   version: 1,
-  minLevel: 4,
+  // From level 1, so free learners (levels 1 to 3) have the three families Secure needs.
+  // The spec still scales with level (buildSpec), so levels 4 and up are unchanged.
   generate: ({ rng, level }) =>
     retry(() => {
       const p = buildSpec(rng, level);

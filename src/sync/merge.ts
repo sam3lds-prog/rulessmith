@@ -16,10 +16,10 @@
 import { applyAttempt, newSkillState } from '../engine/mastery';
 import { dayKey } from '../engine/time';
 import type { Attempt } from '../engine/types';
-import type { ContentReport, Data, PlacementRun, SessionLogEntry, States, TokenEntry } from '../state/types';
+import type { Baseline, ContentReport, Data, PlacementRun, SessionLogEntry, States, TokenEntry } from '../state/types';
 
 /** Fields that follow a learner to another device in the server snapshot (learner_state.state). */
-export const SYNCED_KEYS = ['profile', 'plan', 'placementRuns', 'tokenLedger', 'sessionLog', 'daily', 'ladderBest', 'checkpoints'] as const;
+export const SYNCED_KEYS = ['profile', 'plan', 'placementRuns', 'baseline', 'tokenLedger', 'sessionLog', 'daily', 'ladderBest', 'checkpoints'] as const;
 export type Synced = Pick<Data, (typeof SYNCED_KEYS)[number]>;
 
 /** Version tag written into server snapshots. */
@@ -30,6 +30,7 @@ export function pickSynced(d: Data): Synced {
     profile: d.profile,
     plan: d.plan,
     placementRuns: d.placementRuns,
+    baseline: d.baseline,
     tokenLedger: d.tokenLedger,
     sessionLog: d.sessionLog,
     daily: d.daily,
@@ -59,6 +60,19 @@ export function mergeReports(a: ContentReport[], b: ContentReport[]): ContentRep
 const profileTime = (p: Data['profile']) => p?.updatedAt ?? p?.createdAt ?? 0;
 
 /**
+ * Two baselines (two devices that each carried over old data): keep the one
+ * covering more attempts; the other's attempts are then replayed on top. The
+ * choice is deterministic, so every device makes the same one.
+ */
+export function pickBaseline(a: Baseline | undefined, b: Baseline | undefined): Baseline | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  if (a.covers.length !== b.covers.length) return a.covers.length > b.covers.length ? a : b;
+  if (a.at !== b.at) return a.at > b.at ? a : b;
+  return JSON.stringify(a) >= JSON.stringify(b) ? a : b;
+}
+
+/**
  * Merge two snapshots. `prefer` makes one side's profile and plan win when it
  * has them (used when importing a guest into an account that already has a plan).
  */
@@ -83,6 +97,7 @@ export function mergeSynced(a: Synced, b: Synced | undefined, prefer?: 'a' | 'b'
     profile: pick(a.profile, b.profile, () => profileTime(a.profile) >= profileTime(b.profile)),
     plan: pick(a.plan, b.plan, () => (a.plan?.createdAt ?? 0) >= (b.plan?.createdAt ?? 0)),
     placementRuns: byAt(unionBy<PlacementRun>(a.placementRuns ?? [], b.placementRuns ?? [], (x) => x.at)),
+    baseline: pickBaseline(a.baseline, b.baseline),
     tokenLedger: byAt(unionBy<TokenEntry>(a.tokenLedger ?? [], b.tokenLedger ?? [], (x) => x.id)),
     sessionLog: byAt(unionBy<SessionLogEntry>(a.sessionLog ?? [], b.sessionLog ?? [], (x) => x.id)),
     daily,
@@ -106,16 +121,21 @@ export function applyPlacementRun(states: States, attemptsSoFar: Attempt[], run:
   return out;
 }
 
-/** Skill states from scratch: placement runs and attempts replayed in time order. */
-export function rebuildSkills(attempts: Attempt[], placementRuns: PlacementRun[]): States {
+/**
+ * Skill states from scratch: placement runs and attempts replayed in time order,
+ * on top of the baseline (if any) for history that predates the full log.
+ */
+export function rebuildSkills(attempts: Attempt[], placementRuns: PlacementRun[], baseline?: Baseline): States {
   type Ev = { at: number; order: number; attempt?: Attempt; run?: PlacementRun };
+  const covered = new Set(baseline?.covers ?? []);
   const events: Ev[] = [
-    ...attempts.map((attempt) => ({ at: attempt.at, order: 0, attempt })),
+    ...attempts.filter((a) => !covered.has(a.id)).map((attempt) => ({ at: attempt.at, order: 0, attempt })),
     // At equal times an answer comes before the placement result it fed into.
-    ...placementRuns.map((run) => ({ at: run.at, order: 1, run })),
+    ...placementRuns.filter((r) => !baseline || r.at > baseline.at).map((run) => ({ at: run.at, order: 1, run })),
   ].sort((x, y) => x.at - y.at || x.order - y.order);
-  let states: States = {};
-  const seen: Attempt[] = [];
+  let states: States = baseline ? JSON.parse(JSON.stringify(baseline.skills)) : {};
+  // Attempts in the baseline already happened; placement must see them as prior practice.
+  const seen: Attempt[] = attempts.filter((a) => covered.has(a.id));
   for (const e of events) {
     if (e.attempt) {
       const a = e.attempt;
@@ -162,9 +182,10 @@ export function mergeRemote(local: Data, remote: { synced?: Synced; attempts: At
   const attempts = mergeAttempts(local.attempts, remote.attempts);
   const newAttempts = attempts.length !== local.attempts.length;
   const newRuns = synced.placementRuns.length !== local.placementRuns.length;
-  const skills = newAttempts || newRuns ? rebuildSkills(attempts, synced.placementRuns) : local.skills;
+  const newBaseline = synced.baseline !== local.baseline;
+  const skills = newAttempts || newRuns || newBaseline ? rebuildSkills(attempts, synced.placementRuns, synced.baseline) : local.skills;
   const data: Data = { ...local, ...synced, attempts, skills, ...derived(synced) };
-  const changed = newAttempts || newRuns || JSON.stringify(synced) !== JSON.stringify(pickSynced(local));
+  const changed = newAttempts || newRuns || newBaseline || JSON.stringify(synced) !== JSON.stringify(pickSynced(local));
   return { data, changed };
 }
 
@@ -183,7 +204,7 @@ export function importGuest(target: Data, guest: Data): Data {
     ...synced,
     attempts,
     reports,
-    skills: rebuildSkills(attempts, synced.placementRuns),
+    skills: rebuildSkills(attempts, synced.placementRuns, synced.baseline),
     ...derived(synced),
     outbox: {
       attempts: [...new Set([...target.outbox.attempts, ...guest.attempts.map((a) => a.id)])],

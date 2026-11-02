@@ -8,7 +8,8 @@
 import { describe, expect, it } from 'vitest';
 import { optionIsCorrect } from './check';
 import { claimHolds, enumerateFills, evalPred } from './evaluate';
-import { checkItem, generateItem, SKILLS, TEMPLATES } from './index';
+import { FREE_MAX_LEVEL } from '../config';
+import { checkItem, generateItem, SKILLS, TEMPLATES, templatesForSkill } from './index';
 
 const SEEDS = Number(process.env.SEEDS ?? 25);
 
@@ -19,6 +20,15 @@ describe('curriculum', () => {
       expect(ts.length, skill.id).toBeGreaterThanOrEqual(3);
       expect(new Set(ts.map((t) => t.board)).size, skill.id).toBeGreaterThanOrEqual(2);
       expect(ts.some((t) => t.transfer), `${skill.id} needs a transfer family`).toBe(true);
+    }
+  });
+
+  it('every skill can reach Secure within the free levels, so nobody pays to prove they learned', () => {
+    for (const skill of SKILLS) {
+      const ts = templatesForSkill(skill.id, FREE_MAX_LEVEL);
+      expect(ts.length, skill.id).toBeGreaterThanOrEqual(3);
+      expect(new Set(ts.map((t) => t.board)).size, skill.id).toBeGreaterThanOrEqual(2);
+      expect(ts.some((t) => t.transfer), skill.id).toBe(true);
     }
   });
 

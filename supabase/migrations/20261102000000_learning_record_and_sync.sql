@@ -4,7 +4,8 @@
 -- 1. attempts become the permanent learning record: a stable id from the
 --    device, the learner's response, template and content versions, whether
 --    the rule was on screen, and a server receipt time for incremental pulls.
--- 2. content reports get stable ids.
+-- 2. learner_state gets a version for compare-and-set uploads; content
+--    reports get stable ids.
 -- 3. events: the analytics pipeline, written only through log_events().
 -- 4. disabled_templates: the remote kill switch (read-only from the app).
 -- 5. Quality views split guided practice from independent checks.
@@ -79,6 +80,14 @@ end $$;
 drop trigger if exists attempts_stamp_received_at on public.attempts;
 create trigger attempts_stamp_received_at before insert on public.attempts
   for each row execute function public.stamp_received_at();
+
+-- ------------------------------------------------------------------ learner state
+-- The app uploads the snapshot only if `version` is still the one it pulled
+-- (update ... where version = <pulled>), then bumps it. If another device got
+-- there first, the app pulls again, merges and retries, so two devices syncing
+-- at the same moment can't erase each other's entries.
+
+alter table public.learner_state add column if not exists version bigint not null default 0;
 
 -- ------------------------------------------------------------------ content reports
 
