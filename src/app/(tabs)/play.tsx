@@ -31,12 +31,11 @@ export default function Play() {
   const examName = exams.length ? exams.map((e) => EXAMS.find((x) => x.id === e)?.name).join(' and ') : 'General math';
   const blueprint = exams.length ? BLUEPRINTS[exams[0]] : undefined;
   const destination = blueprint
-    ? `${blueprint.domains
+    ? `Where this leads: ${blueprint.domains
         .filter((d) => d.status !== 'outside')
         .slice(0, 2)
         .map((d) => d.name.toLowerCase())
-        .join(' and ')
-        .replace(/^./, (c) => c.toUpperCase())} are the destination. Start with number properties.`
+        .join(', then ')}. Start with number properties.`
     : 'Start with number properties: the rules every later topic leans on.';
 
   const targets = todaysTargets(s.plan, s.skills, now);
