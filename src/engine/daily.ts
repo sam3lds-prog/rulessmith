@@ -3,6 +3,7 @@
  * be shared spoiler-free. Rotates through tactile board families at a steady
  * mid difficulty.
  */
+import { isTemplateDisabled, templateVersionOf } from '../content';
 import { hashString } from '../content/rng';
 import type { Slot } from './types';
 
@@ -21,17 +22,28 @@ const ROTATION = [
   'div.sums/refute',
 ];
 
-export function dailySlot(day: string): Slot {
+/**
+ * The day's puzzle. If the scheduled template is switched off, the next one in
+ * the rotation is used, so everyone with the same kill-switch list still gets
+ * the same puzzle. Null only if the whole rotation is switched off.
+ */
+export function dailySlot(day: string): Slot | null {
   const h = hashString(`daily:${day}`);
-  const templateId = ROTATION[h % ROTATION.length];
-  return {
-    skillId: templateId.split('/')[0],
-    templateId,
-    level: 4,
-    seed: (h % 2147483646) + 1,
-    band: 'practice',
-    reason: 'daily',
-  };
+  for (let i = 0; i < ROTATION.length; i++) {
+    const templateId = ROTATION[(h + i) % ROTATION.length];
+    if (isTemplateDisabled(templateId)) continue;
+    return {
+      skillId: templateId.split('/')[0],
+      templateId,
+      version: templateVersionOf(templateId),
+      level: 4,
+      seed: (h % 2147483646) + 1,
+      band: 'practice',
+      reason: 'daily',
+      support: 'independent',
+    };
+  }
+  return null;
 }
 
 /** Spoiler-free share text: says how it went, never what the answer was. */

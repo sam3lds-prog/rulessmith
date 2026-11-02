@@ -6,9 +6,10 @@ import { AtkinsonHyperlegible_700Bold } from '@expo-google-fonts/atkinson-hyperl
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useApp } from '../state/store';
+import { bootstrapStore, useApp } from '../state/store';
 import { color } from '../ui/theme';
 
 export default function RootLayout() {
@@ -20,6 +21,10 @@ export default function RootLayout() {
     AtkinsonHyperlegible_700Bold,
   });
   const hydrated = useApp((s) => s.hydrated);
+  // Opens the learner's saved data on the client (the web export renders once in Node first).
+  useEffect(() => {
+    void bootstrapStore();
+  }, []);
 
   return (
     <SafeAreaProvider>

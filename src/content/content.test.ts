@@ -37,7 +37,7 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('%s', (id, template) => 
     for (let level = template.minLevel ?? 1; level <= 10; level++) {
       for (let seed = 1; seed <= SEEDS; seed++) {
         const s = seed * 7919 + level;
-        const item = generateItem(id, level, s);
+        const item = generateItem(id, level, s, { allowDisabled: true });
         const where = `${item.id}`;
 
         // Text quality.
@@ -87,8 +87,8 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('%s', (id, template) => 
   });
 
   it('regenerates identically from the same seed', () => {
-    const a = generateItem(id, 5, 12345);
-    const b = generateItem(id, 5, 12345);
+    const a = generateItem(id, 5, 12345, { allowDisabled: true });
+    const b = generateItem(id, 5, 12345, { allowDisabled: true });
     expect(a).toEqual(b);
   });
 });

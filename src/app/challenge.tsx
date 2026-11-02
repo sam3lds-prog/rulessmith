@@ -10,7 +10,7 @@ import { color, space } from '../ui/theme';
 const RANGES: { label: string; detail: string; levels: [number, number] }[] = [
   { label: 'Warm-up', detail: 'Levels 1 to 3', levels: [1, 3] },
   { label: 'Core', detail: 'Levels 4 to 7', levels: [4, 7] },
-  { label: '700+', detail: 'Levels 8 to 10, the hardest variants', levels: [8, 10] },
+  { label: 'Hardest', detail: 'Levels 8 to 10, the hardest variants', levels: [8, 10] },
 ];
 
 /** Challenge builder: the learner picks topics and difficulty; the app generates the run. */
@@ -31,7 +31,7 @@ export default function Challenge() {
   const start = () => {
     const r = s.startSession('challenge', { skills: picked, levels: RANGES[range].levels });
     if (r.ok) router.push('/session');
-    else setError(r.reason === 'locked' ? 'That difficulty is part of Premium or the 700+ Challenge pack.' : 'Pick at least one skill.');
+    else setError(r.reason === 'locked' ? 'That difficulty is part of Premium or the Hardest Levels Challenge pack.' : 'Pick at least one skill.');
   };
 
   return (
@@ -58,7 +58,7 @@ export default function Challenge() {
           <OptionRow
             key={r.label}
             label={r.label}
-            detail={allowed(i) ? r.detail : `${r.detail}. Included with Premium or the 700+ Challenge pack.`}
+            detail={allowed(i) ? r.detail : `${r.detail}. Included with Premium or the Hardest Levels Challenge pack.`}
             selected={range === i}
             onPress={() => setRange(i)}
           />

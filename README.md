@@ -16,6 +16,8 @@ This is the foundation from Phases 1 to 3 of the plan, with the Phase 4 money an
 | Content engine: 18 micro-skills, 54 template families, levels 1 to 10 | Built. Every answer is graded by an independent brute-force checker |
 | Content audit: checker agrees with every generator across levels and seeds | Built (`npm run content:audit`) |
 | Learning engine: skill graph, Elo difficulty, mastery evidence, spaced review | Built and unit tested |
+| Guided practice vs independent checks: Secure counts only answers given with the rule hidden and no hints, at every level including the free ones | Built and tested |
+| Learning record: every answer stored with its response, misconception, template and content version, support mode, hints and active time; puzzles in progress survive refresh and force-close | Built and tested |
 | Session mixer (60% target, 30% review, 10% stretch) | Built |
 | Try-a-puzzle, profile questions, placement check (8 to 15 items) | Built |
 | Journey planner: weekly plan, milestones, checkpoints, weekly re-plan, "doesn't fit" alternatives | Built |
@@ -24,8 +26,12 @@ This is the foundation from Phases 1 to 3 of the plan, with the Phase 4 money an
 | Premium, Exam Sprint, packs, free limits, earned tokens | Rules built and tested; purchases use a **test provider** (no money moves) |
 | Ad rules (adults only, never mid-puzzle, after a miss, or in the first 3 sessions) | Built and tested; AdMob not yet wired |
 | Age bands: adults full, teens no ads or purchases, under-13s wait for parent accounts | Built and tested; store age signals not yet wired |
-| Supabase schema with row-level security, email-code sign-in, sync, account deletion | Built; needs a Supabase project to run |
-| Content reports with item, version and seed; same-day template kill switch | Built (reports sync when signed in) |
+| Accounts: one storage bucket per learner (sign-out never leaves the last learner on screen), guest import only by choice, attempt outbox, merge by id across devices | Built and tested; needs a Supabase project to run |
+| Supabase schema with row-level security, email-code sign-in, account deletion | Built; access rules checked on Postgres (`supabase/checks`) |
+| Remote kill switch (`disabled_templates`), cached offline, enforced on every path that serves a puzzle | Built and tested; needs a Supabase project to run |
+| Analytics: persistent event queue uploaded to Supabase (`events`), no identifiers for minors | Built and tested |
+| Content reports with item, version and seed | Built (reports sync when signed in) |
+| Human review worksheets for all 54 families at low, middle and high levels, and a version-pinned sign-off ledger | Built; the review itself is a person's job (`docs/review/README.md`) |
 
 Not built yet (by design, per the plan's gates): Android and iOS store billing (RevenueCat), AdMob, native age-signal APIs, the parent/teen route, verbal and grammar tracks, GMAT Data Insights, and tutor dashboards. See `docs/ROADMAP.md`.
 
@@ -55,6 +61,9 @@ On a Mac with Xcode you can instead run `npx expo run:ios`.
 npm run content:audit              # every template, every level, 25 seeds each
 SEEDS=200 npm run content:audit    # a deeper pass before a content release
 npm run content:sample             # prints one item per template for a human reviewer
+npm run content:worksheet          # writes docs/review/*.md: every family at low, middle and high level
+npm run content:signoff            # which families are signed off, stale or missing
+REQUIRE_SIGNOFF=1 npm test         # fails until every family is signed off (use before the beta)
 ```
 
 ### Web build (the free daily puzzle)
@@ -69,7 +78,7 @@ npm run build:web    # static site in dist/; deploy to any static host
 
 Copy `.env.example` to `.env`. Everything is optional: with no values the app runs fully on the device, ads stay off, and purchases use the test provider.
 
-- `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`: cloud sync. Apply `supabase/migrations/` to your project (`supabase db push`), deploy the account-deletion function (`supabase functions deploy delete-account`), and add `{{ .Token }}` to the Magic Link email template so sign-in emails carry a 6-digit code.
+- `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`: accounts, sync, the remote kill switch and analytics. Apply `supabase/migrations/` to your project (`supabase db push`; both files, in order), deploy the account-deletion function (`supabase functions deploy delete-account`), and add `{{ .Token }}` to the Magic Link email template so sign-in emails carry a 6-digit code. To switch a puzzle family off for everyone: `insert into public.disabled_templates (template_id, reason) values ('<template id>', '<why>');`. Read analytics with the service role (the app can only write them).
 - `EXPO_PUBLIC_ADS_ENABLED`: leave `false` until 4 to 8 weeks after launch.
 - `EXPO_PUBLIC_REVENUECAT_*`: wired in Phase 4 (`docs/MONETIZATION.md`).
 
@@ -82,13 +91,16 @@ src/
   engine/         the learning engine: rating, mastery, review, mixer, placement, planner, daily
   monetization/   products, entitlements, tokens, purchase provider
   policy/         age bands and ad placement rules
-  state/          the app store (local-first, persisted)
-  data/           optional Supabase sync
+  state/          the app store, saved data types, migrations, per-learner storage buckets
+  sync/           merging two copies of a learner's data; Supabase row mapping
+  data/           Supabase client, remote kill switch
   boards/         the puzzle boards and the item screen
   ads/            ad slots (placeholders until AdMob)
   ui/             design tokens and components
 supabase/migrations/   database schema with row-level security
+supabase/checks/       access-rule checks for the schema, runnable on plain Postgres
 docs/                  architecture, content factory, monetization, roadmap
+docs/review/           content review worksheets and how to use them
 ```
 
 Start with `docs/ARCHITECTURE.md`.

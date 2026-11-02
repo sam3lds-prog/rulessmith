@@ -11,23 +11,76 @@ import type { Item, Template } from './types';
 export const CONTENT_VERSION = '2026.11.0';
 
 /**
- * Same-day kill switch: a template listed here is never served. In production
- * this list should come from remote config (see docs/CONTENT.md) so a defective
- * template can be switched off without an app release.
+ * Templates switched off in the build. The same-day kill switch is the remote
+ * list (`disabled_templates` in Supabase, fetched and cached by data/flags.ts),
+ * which is merged in with `setRemoteDisabledTemplates`. Use this set only for
+ * a template that must stay off in every build.
  */
 export const DISABLED_TEMPLATES = new Set<string>([]);
+
+let remoteDisabled = new Set<string>();
+
+/** Replace the remote kill-switch list (from Supabase or its offline cache). */
+export function setRemoteDisabledTemplates(ids: Iterable<string>) {
+  remoteDisabled = new Set(ids);
+}
+
+export const remoteDisabledTemplates = () => [...remoteDisabled];
+
+/** True when a template must not be served: switched off in the build or remotely. */
+export const isTemplateDisabled = (templateId: string) => DISABLED_TEMPLATES.has(templateId) || remoteDisabled.has(templateId);
 
 export const TEMPLATES: Template[] = [...DIVISIBILITY_TEMPLATES, ...PRIMES_TEMPLATES, ...REMAINDER_TEMPLATES];
 
 export const TEMPLATE_BY_ID: Record<string, Template> = Object.fromEntries(TEMPLATES.map((t) => [t.id, t]));
 
+/** Servable templates for a skill: known, not switched off, and available at this level. */
 export function templatesForSkill(skillId: string, level = 10): Template[] {
-  return TEMPLATES.filter((t) => t.skillId === skillId && !DISABLED_TEMPLATES.has(t.id) && (t.minLevel ?? 1) <= level);
+  return TEMPLATES.filter((t) => t.skillId === skillId && !isTemplateDisabled(t.id) && (t.minLevel ?? 1) <= level);
 }
 
-export function generateItem(templateId: string, level: number, seed: number): Item {
+export type UnservableReason = 'unknown' | 'disabled' | 'stale';
+
+/** Thrown when a puzzle cannot be served as asked. Callers replace the slot with a fresh one. */
+export class TemplateUnavailableError extends Error {
+  constructor(
+    readonly templateId: string,
+    readonly reason: UnservableReason,
+  ) {
+    super(
+      reason === 'unknown'
+        ? `Unknown template ${templateId}`
+        : reason === 'disabled'
+          ? `Template ${templateId} is switched off`
+          : `Template ${templateId} has changed since this puzzle was made`,
+    );
+    this.name = 'TemplateUnavailableError';
+  }
+}
+
+export interface GenerateOptions {
+  /**
+   * Serve a switched-off template anyway. Only for tools that rebuild a known
+   * puzzle (the content audit, review sheets, report triage), never for learners.
+   */
+  allowDisabled?: boolean;
+  /**
+   * The template version the caller expects. If the template has changed since,
+   * the same (template, level, seed) would be a different puzzle, so this throws
+   * instead of silently serving it.
+   */
+  version?: number;
+}
+
+/**
+ * Build the item for (template, level, seed). Deterministic. Refuses switched-off
+ * templates and version mismatches (see GenerateOptions) with TemplateUnavailableError.
+ */
+export function generateItem(templateId: string, level: number, seed: number, opts: GenerateOptions = {}): Item {
   const t = TEMPLATE_BY_ID[templateId];
-  if (!t) throw new Error(`Unknown template ${templateId}`);
+  if (!t) throw new TemplateUnavailableError(templateId, 'unknown');
+  if (!opts.allowDisabled && isTemplateDisabled(t.id)) throw new TemplateUnavailableError(t.id, 'disabled');
+  if (opts.version !== undefined && opts.version !== t.version) throw new TemplateUnavailableError(t.id, 'stale');
   const lv = Math.min(10, Math.max(1, Math.round(level)));
   const draft = t.generate({ level: lv, rng: createRng(seed) });
   return {
@@ -39,10 +92,23 @@ export function generateItem(templateId: string, level: number, seed: number): I
     board: t.board,
     level: lv,
     seed,
+    templateVersion: t.version,
     contentVersion: `${CONTENT_VERSION}+${t.id}.v${t.version}`,
     transfer: Boolean(t.transfer),
   };
 }
+
+/** The item for a slot, or null when the slot can no longer be served (switched off, or its template changed). */
+export function serveItem(slot: { templateId: string; level: number; seed: number; version?: number }): Item | null {
+  try {
+    return generateItem(slot.templateId, slot.level, slot.seed, { version: slot.version });
+  } catch (e) {
+    if (e instanceof TemplateUnavailableError) return null;
+    throw e;
+  }
+}
+
+export const templateVersionOf = (templateId: string) => TEMPLATE_BY_ID[templateId]?.version ?? 0;
 
 /** Parse an item id back into its parts (used by content reports). */
 export function parseItemId(id: string): { templateId: string; level: number; seed: number } | null {

@@ -23,7 +23,7 @@ Every family maps levels 1 to 10 onto these knobs (see each template for specifi
 | Direction | check a claim, fill one blank | build from scratch, find every answer, count the answers |
 | Representation | bare numbers | word problems, unfamiliar framings |
 | Wrong answers | random | built from named misconceptions |
-| Support | rule shown openly (levels 1 to 4) | rule behind a tap that counts as a hint |
+| Support | guided: rule on screen (New and Learning skills) | independent: rule behind a tap that counts as a hint (Practicing and up, and every review or check). Set per slot, not per level |
 
 ## Adding a template family
 
@@ -33,8 +33,8 @@ Every family maps levels 1 to 10 onto these knobs (see each template for specifi
 4. **Write explanations from the item**, not generic text: "The known digits add to 11, so the blank can be 1, 4 or 7."
 5. **Register it** in the track's exported list. Mark `transfer: true` if it is an unfamiliar framing of the skill.
 6. **Run the audit:** `SEEDS=200 npm run content:audit`. It must pass at every level.
-7. **Human review.** Run `npm run content:sample` (and `ALL_LEVELS=1` for easy levels too) and have the reviewer check explanations, fairness and accessibility for each family, sampling instances.
-8. **Bump `CONTENT_VERSION`** in `src/content/index.ts` and ship.
+7. **Human review.** Run `npm run content:worksheet` and have the reviewer work through the family's entry (low, middle and high level) as described in `docs/review/README.md`, sampling more seeds with `npm run content:sample` where needed. Record the sign-off in `src/content/signoff.ts`.
+8. **Bump `CONTENT_VERSION`** in `src/content/index.ts` and ship. Before a beta or release, `REQUIRE_SIGNOFF=1 npm test` must pass.
 
 ## Using AI for drafting (offline)
 
@@ -42,9 +42,10 @@ Use Claude for wording variants, word-problem contexts, hints, explanations, and
 
 ## When something is wrong
 
-- Every result screen has **Report a problem**. A report carries the item id (`template@level#seed`) and the content version, so `generateItem(template, level, seed)` rebuilds the exact puzzle.
-- **Same-day shutoff:** add the template id to `DISABLED_TEMPLATES` in `src/content/index.ts`. Before launch, move that list to remote config so it applies without an app release.
-- **Quality loop:** the `family_quality` view (Supabase) shows success rate, hint rate, median time and reports per family and level. Flag families whose success rate is far from what their level predicts, or that draw repeated reports; fix or retire them.
+- Every result screen has **Report a problem**. A report carries the item id (`template@level#seed`) and the content version (which includes the template version), so `generateItem(template, level, seed, { allowDisabled: true })` rebuilds the exact puzzle, as long as the template version still matches. Every attempt stores the same, plus the learner's response.
+- **Same-day shutoff:** insert the template id into the Supabase `disabled_templates` table (`insert into public.disabled_templates (template_id, reason) values ('div.sums/refute', 'Wrong key at level 9');`). Apps pick it up at launch or on returning to the foreground (at most 5 minutes later), and the list is cached for offline use. It is enforced inside `generateItem`, so queued, resumed, daily, ladder, challenge and placement puzzles are all covered; a puzzle switched off on screen is replaced at once. Delete the row to switch it back on. `DISABLED_TEMPLATES` in `src/content/index.ts` is only for a template that must stay off in every build.
+- **Changing a template:** bump its `version`. Saved slots and replays carry the version they were made with, and `generateItem` refuses a mismatch, so a puzzle in progress is replaced rather than silently turning into a different puzzle under the same id. The sign-off goes stale until someone reviews the new version.
+- **Quality loop:** the `family_quality` view (Supabase) shows, per family, level and template version, the independent success rate (rule hidden, no hints), the guided success rate, hint rate, median time and reports. Compare the independent rate with the band the level predicts. `misconception_counts` shows which wrong answers learners actually choose. Flag families that are far off or draw repeated reports; fix or retire them.
 
 ## Verbal and logic (later)
 

@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { Switch, View } from 'react-native';
 import { config } from '../../config';
 import { cloudConfigured } from '../../data/cloud';
-import { CONTENT_VERSION, EXAMS } from '../../content';
+import { queuedCount } from '../../analytics/track';
+import { CONTENT_VERSION, EXAMS, remoteDisabledTemplates } from '../../content';
 import { formatShortDate, parseDay } from '../../engine/time';
 import { isPremium } from '../../monetization/entitlements';
 import { PRODUCT_BY_ID } from '../../monetization/products';
@@ -84,7 +85,9 @@ export default function You() {
         title={s.account.mode === 'cloud' ? `Synced as ${s.account.email}` : 'Saved on this device'}
         detail={
           s.account.mode === 'cloud'
-            ? 'Manage sync'
+            ? s.account.needsSignIn
+              ? 'Sign in again to sync'
+              : 'Manage sync'
             : cloudConfigured() && policy.canCreateAccount
               ? 'Create an account to sync across devices'
               : 'Syncing across devices comes with accounts'
@@ -96,7 +99,7 @@ export default function You() {
         <Button title="Delete my data" kind="danger" onPress={() => setConfirmDelete(true)} style={{ marginTop: space.md }} />
       ) : (
         <Plate tone="brass" style={{ marginTop: space.md }}>
-          <Body>This permanently deletes your profile, plan and progress{s.account.mode === 'cloud' ? ', including your synced account' : ' from this device'}. Purchases stay with your app store account and can be restored.</Body>
+          <Body>This permanently deletes your profile, plan and progress{s.account.mode === 'cloud' ? ', including your synced account and anything saved on this device without an account' : ' from this device'}. Purchases stay with your app store account and can be restored.</Body>
           <Row>
             <Button title="Keep my data" kind="secondary" onPress={() => setConfirmDelete(false)} style={{ flex: 1 }} />
             <Button
@@ -126,6 +129,10 @@ export default function You() {
             <Switch value={s.settings.previewAds} onValueChange={s.setPreviewAds} trackColor={{ true: color.cobalt, false: color.ruleStrong }} />
           </View>
           <Small>Content reports stored: {s.reports.length}</Small>
+          <Small>
+            Saved as {s.owner === 'guest' ? 'guest' : 'account'}. Waiting to upload: {s.outbox.attempts.length} answers, {s.outbox.reports.length} reports, {queuedCount()} events.
+          </Small>
+          {remoteDisabledTemplates().length ? <Small>Switched off remotely: {remoteDisabledTemplates().join(', ')}</Small> : null}
         </>
       ) : null}
 

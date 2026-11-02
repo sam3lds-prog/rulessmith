@@ -5,7 +5,7 @@ import { track } from '../analytics/track';
 import { ItemScreen } from '../boards/ItemScreen';
 import { Tile } from '../boards/Tile';
 import { APP_NAME, APP_TAGLINE } from '../config';
-import { generateItem } from '../content';
+import { serveItem, TEMPLATES, templatesForSkill, templateVersionOf } from '../content';
 import { useApp } from '../state/store';
 import { Body, Button, Gap, Heading, Screen, Small } from '../ui/kit';
 import { color, font, space } from '../ui/theme';
@@ -16,13 +16,24 @@ export default function Welcome() {
   const [stage, setStage] = useState<Stage>('intro');
   const [last, setLast] = useState<{ correct: boolean; ms: number } | null>(null);
   const setTried = useApp((s) => s.setTriedPuzzle);
-  const item = useMemo(() => generateItem('div.digit-sum/sort', 2, Math.floor(Math.random() * 2 ** 30) + 1), []);
+  const flagsVersion = useApp((s) => s.flagsVersion);
+  // The digit-sum sort, unless it is switched off; then the nearest servable easy puzzle.
+  const item = useMemo(() => {
+    const seed = Math.floor(Math.random() * 2 ** 30) + 1;
+    const ids = ['div.digit-sum/sort', ...templatesForSkill('div.digit-sum', 2).map((t) => t.id), ...TEMPLATES.filter((t) => (t.minLevel ?? 1) <= 2).map((t) => t.id)];
+    for (const templateId of ids) {
+      const it = serveItem({ templateId, level: 2, seed, version: templateVersionOf(templateId) });
+      if (it) return it;
+    }
+    return null;
+  }, [flagsVersion]);
 
-  if (stage === 'puzzle') {
+  if (stage === 'puzzle' && item) {
     return (
       <ItemScreen
         key={item.id}
         item={item}
+        support="guided"
         header={<Small style={{ marginBottom: space.xs }}>Your first puzzle. No sign-up.</Small>}
         onAnswered={(a) => {
           const r = { correct: a.correct, ms: a.ms };
@@ -59,7 +70,7 @@ export default function Welcome() {
   }
 
   return (
-    <Screen footer={<Button title="Try a puzzle" onPress={() => setStage('puzzle')} accessibilityHint="Opens a 60-second puzzle" />}>
+    <Screen footer={<Button title="Try a puzzle" onPress={() => (item ? setStage('puzzle') : router.push('/onboarding/about'))} accessibilityHint="Opens a 60-second puzzle" />}>
       <Gap h={space.xxl} />
       <Text style={styles.wordmark} accessibilityRole="header">
         {APP_NAME}

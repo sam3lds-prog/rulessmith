@@ -143,6 +143,8 @@ export interface Item {
   board: BoardKind;
   level: number;
   seed: number;
+  /** Version of the template that produced this item. */
+  templateVersion: number;
   contentVersion: string;
   transfer: boolean;
   prompt: string;
@@ -154,6 +156,19 @@ export interface Item {
   /** The generator's own answer. Used only by the content audit, never for grading. */
   key: Response;
 }
+
+/**
+ * A board's work in progress, including incomplete work that is not yet a
+ * Response (half-sorted tiles, one blank filled). Saved so a puzzle survives
+ * a refresh or force-close exactly as the learner left it.
+ */
+export type BoardDraft =
+  | { kind: 'sort'; bins: ('yes' | 'no' | null)[] }
+  | { kind: 'construct'; fill: (number | null)[] }
+  | { kind: 'constructAll'; picked: number[] }
+  | { kind: 'refute'; choice: 'true' | number | null }
+  | { kind: 'choice'; sel: string | null }
+  | { kind: 'numeric'; text: string };
 
 export interface CheckResult {
   correct: boolean;

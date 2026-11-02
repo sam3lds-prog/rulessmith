@@ -1,32 +1,39 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from 'react-native';
+import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { checkItem, correctAnswerText } from '../content/check';
 import { fmt } from '../content/format';
-import type { CheckResult, Item, Response } from '../content/types';
-import { LENS_OPEN_MAX_LEVEL } from '../content/numbers';
+import type { BoardDraft, CheckResult, Item, Response } from '../content/types';
+import type { Support } from '../engine/types';
+import type { AnswerRecord, ItemProgress } from '../state/types';
 import { Body, Button, Gap, Heading, Label, Small } from '../ui/kit';
 import { color, font, MAX_WIDTH, radius, space, type } from '../ui/theme';
 import { ChoiceBoard, ConstructBoard, NumericBoard, RefuteBoard, SortBoard } from './boards';
 
-export interface AnswerInfo {
-  correct: boolean;
-  /** A hint or the rule lens was opened before answering. */
-  hint: boolean;
-  hintsUsed: number;
-  ms: number;
-  response: Response;
+export interface AnswerInfo extends AnswerRecord {
   result: CheckResult;
 }
 
 const REPORT_REASONS = ['The answer is wrong', 'The question is unclear', 'Something looks broken', 'Something else'];
 
+/** How often active time is saved while the puzzle is on screen, in case the app is killed without warning. */
+const HEARTBEAT_MS = 10_000;
+
 /**
  * One puzzle, start to finish. Key it by item.id so its state resets per item.
+ *
+ * `support` decides the rule: guided shows it; independent hides it behind a
+ * tap that counts as a hint. Work in progress (the board, hints, a revealed
+ * rule, first-seen time, active time) is reported through `onProgress` and
+ * restored from `initialProgress`, so an interruption can't turn a helped
+ * answer into an unaided one.
  */
 export function ItemScreen({
   item,
+  support,
   header,
+  initialProgress,
+  onProgress,
   onAnswered,
   onContinue,
   continueLabel = 'Next',
@@ -35,7 +42,11 @@ export function ItemScreen({
   timed = false,
 }: {
   item: Item;
+  support: Support;
   header?: ReactNode;
+  /** Ignored unless it belongs to this item. */
+  initialProgress?: ItemProgress;
+  onProgress?: (p: ItemProgress) => void;
   onAnswered: (a: AnswerInfo) => void;
   onContinue: () => void;
   continueLabel?: string;
@@ -44,37 +55,85 @@ export function ItemScreen({
   onReport?: (reason: string) => void;
   timed?: boolean;
 }) {
-  const [draft, setDraft] = useState<Response | null>(null);
+  const restored = initialProgress && initialProgress.itemId === item.id ? initialProgress : undefined;
+  const guided = support === 'guided';
+  const [draft, setDraft] = useState<BoardDraft | null>(restored?.draft ?? null);
+  const [response, setResponse] = useState<Response | null>(null);
   const [result, setResult] = useState<CheckResult | null>(null);
-  const [hints, setHints] = useState(0);
-  const [lensOpen, setLensOpen] = useState(item.level <= LENS_OPEN_MAX_LEVEL);
+  const [hints, setHints] = useState(restored?.hints ?? 0);
+  const [ruleRevealed, setRuleRevealed] = useState(restored?.ruleRevealed ?? false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reported, setReported] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const startedAt = useRef(Date.now());
+  const [elapsed, setElapsed] = useState(restored?.activeMs ?? 0);
+  const firstSeenAt = useRef(restored?.firstSeenAt ?? Date.now());
+  // Active time: what was banked before, plus the current foreground stretch.
+  const banked = useRef(restored?.activeMs ?? 0);
+  const since = useRef<number | null>(AppState.currentState === 'background' ? null : Date.now());
   const scroll = useRef<ScrollViewInstance>(null);
-  const lensCountsAsHint = item.level > LENS_OPEN_MAX_LEVEL;
-  const [lensUsed, setLensUsed] = useState(false);
   const locked = result !== null;
+  const lensOpen = guided || ruleRevealed;
+
+  const activeMs = () => banked.current + (since.current !== null ? Date.now() - since.current : 0);
+
+  const latest = useRef({ draft, hints, ruleRevealed, locked });
+  latest.current = { draft, hints, ruleRevealed, locked };
+  const report = () => {
+    const l = latest.current;
+    if (l.locked || !onProgress) return;
+    onProgress({ itemId: item.id, draft: l.draft, hints: l.hints, ruleRevealed: l.ruleRevealed, firstSeenAt: firstSeenAt.current, activeMs: activeMs() });
+  };
+
+  // Save on every change to the work, including the first view (so first-seen time survives).
+  useEffect(report, [draft, hints, ruleRevealed]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') {
+        if (since.current === null) since.current = Date.now();
+      } else if (since.current !== null) {
+        banked.current += Date.now() - since.current;
+        since.current = null;
+        report();
+      }
+    });
+    const beat = setInterval(report, HEARTBEAT_MS);
+    return () => {
+      sub.remove();
+      clearInterval(beat);
+    };
+  }, []);
 
   useEffect(() => {
     if (!timed || locked) return;
-    const t = setInterval(() => setElapsed(Date.now() - startedAt.current), 1000);
+    const t = setInterval(() => setElapsed(activeMs()), 1000);
     return () => clearInterval(t);
   }, [timed, locked]);
 
   const submit = () => {
-    if (!draft) return;
-    const r = checkItem(item, draft);
+    if (!response || locked) return;
+    const r = checkItem(item, response);
     setResult(r);
-    const ms = Date.now() - startedAt.current;
-    onAnswered({ correct: r.correct, hint: hints > 0 || lensUsed, hintsUsed: hints + (lensUsed ? 1 : 0), ms, response: draft, result: r });
+    const ms = activeMs();
+    banked.current = ms;
+    since.current = null;
+    onAnswered({
+      correct: r.correct,
+      hint: hints > 0 || ruleRevealed,
+      hintsUsed: hints + (ruleRevealed ? 1 : 0),
+      ruleShown: lensOpen,
+      support,
+      ms,
+      firstSeenAt: firstSeenAt.current,
+      response,
+      misconception: r.misconception,
+      result: r,
+    });
     setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 120);
   };
 
   const p = item.payload;
   const board = (() => {
-    const common = { locked, result: result ?? undefined, onChange: setDraft };
+    const common = { locked, result: result ?? undefined, onChange: setResponse, initialDraft: restored?.draft ?? null, onDraft: setDraft };
     switch (p.kind) {
       case 'sort':
         return <SortBoard payload={p} {...common} />;
@@ -95,7 +154,18 @@ export function ItemScreen({
       <ScrollView ref={scroll} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.column}>
           {header}
-          {timed ? <Small style={{ alignSelf: 'flex-end' }}>{Math.floor(elapsed / 1000)}s</Small> : null}
+          <View style={styles.metaRow}>
+            {!compact ? (
+              <View style={[styles.mode, guided ? styles.modeGuided : styles.modeOwn]}>
+                <Text style={[type.micro, { color: guided ? color.cobaltDeep : color.brass, fontFamily: font.label }]}>
+                  {guided ? 'Practice with the rule' : 'On your own'}
+                </Text>
+              </View>
+            ) : (
+              <View />
+            )}
+            {timed ? <Small>{Math.floor(elapsed / 1000)}s</Small> : null}
+          </View>
           <Text style={styles.prompt} accessibilityRole="header">
             {item.prompt}
           </Text>
@@ -108,14 +178,11 @@ export function ItemScreen({
             ) : !locked ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityHint={lensCountsAsHint ? 'Counts as a hint for this puzzle' : undefined}
-                onPress={() => {
-                  setLensOpen(true);
-                  if (lensCountsAsHint) setLensUsed(true);
-                }}
+                accessibilityHint="Counts as a hint for this puzzle"
+                onPress={() => setRuleRevealed(true)}
                 style={styles.inlineLink}
               >
-                <Text style={[type.label, { color: color.cobalt }]}>Show the rule</Text>
+                <Text style={[type.label, { color: color.cobalt }]}>Show the rule (counts as a hint)</Text>
               </Pressable>
             ) : null
           ) : null}
@@ -170,7 +237,7 @@ export function ItemScreen({
                 style={{ flex: 1 }}
                 accessibilityHint="A hint before answering makes this puzzle practice rather than proof"
               />
-              <Button title="Check" onPress={submit} disabled={!draft} style={{ flex: 1.4 }} />
+              <Button title="Check" onPress={submit} disabled={!response} style={{ flex: 1.4 }} />
             </View>
           )}
         </View>
@@ -218,6 +285,10 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1, paddingHorizontal: space.lg + 4, paddingTop: space.lg, paddingBottom: space.xxl },
   column: { width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center', gap: space.sm },
   prompt: { ...type.body, fontFamily: font.bodyBold, fontSize: 19, lineHeight: 27 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 24 },
+  mode: { borderRadius: radius.sm, paddingHorizontal: space.sm, paddingVertical: 3 },
+  modeGuided: { backgroundColor: color.cobaltWash },
+  modeOwn: { backgroundColor: color.brassWash },
   lens: {
     backgroundColor: color.surface,
     borderRadius: radius.sm,
