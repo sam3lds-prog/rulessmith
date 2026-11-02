@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Rulesmith",
+    "slug": "mathwhiz",
+    "version": "0.1.0",
+    "scheme": "rulesmith",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#EDF0EA",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "output": "static"
+    },
+    "plugins": ["expo-router", "expo-status-bar", "expo-font"],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
