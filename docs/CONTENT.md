@@ -4,11 +4,13 @@ Math practice grows by adding **template families**, not by writing questions on
 
 ## What exists today
 
-18 micro-skills in three tracks, 54 families (three per skill, at least one a transfer family):
+18 micro-skills in three tracks, 58 families (at least three per skill, at least one a transfer family):
 
 - **Divisibility** (8): last-digit rules, digit sums, last digits for 4 and 8, two rules at once (6, 15, 18), the rule for 11, combining rules (12, 24, 36, 45, 72), sums and products, build to spec.
 - **Primes and factors** (5): spotting primes, prime factorization, counting factors, GCD and LCM, squares and cubes.
 - **Remainders** (5): basics, remainders from digits, remainder arithmetic, cycles and units digits, working backwards.
+
+Four families feed the games: `div.digit-sum/refute` (Rule Breaker claims about 3 and 9), `pf.factorize/tree` (Factor Factory), `rem.basics/rail` and `rem.cycles/rail` (Remainder Rails). Chapter missions name templates and levels in `src/quests/chapters.ts`; if you change or retire a template a mission uses, update the mission and bump its `version`.
 
 The skill list is a draft for the content reviewer (a Phase 0 task in the plan). Exam weights in `src/content/curriculum.ts` are editorial estimates and should be checked against the official GMAC, ETS, College Board and ACT outlines.
 
