@@ -1,5 +1,5 @@
 import { Redirect, router } from 'expo-router';
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ItemScreen } from '../boards/ItemScreen';
 import { LADDER_MISSES } from '../engine/mixer';
@@ -18,6 +18,18 @@ export default function Session() {
   const answered = useRef(false);
 
   const item = useMemo(() => currentItem(), [active?.id, active?.index]);
+
+  // Resumed after the app was closed on an answered puzzle: move past it rather than grading it twice.
+  useEffect(() => {
+    if (active && active.results.length > active.index) {
+      const { done } = advance();
+      if (done) {
+        finish();
+        router.replace('/recap');
+      }
+    }
+  }, [active?.id]);
+
   if (!active || !item) return <Redirect href="/today" />;
 
   const ladder = active.ladder;
@@ -27,7 +39,9 @@ export default function Session() {
 
   const end = () => {
     if (active.results.length > 0) {
-      finish();
+      // Ending a ladder at its third miss is a normal finish; anything else stopped early.
+      const early = !(ladder && ladder.misses >= LADDER_MISSES);
+      finish({ early });
       router.replace('/recap');
     } else {
       abandon();

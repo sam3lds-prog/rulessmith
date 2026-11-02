@@ -14,7 +14,7 @@
 import { dependentsOf, EXAMS, SKILL_BY_ID, SKILLS, TRACKS } from '../content/curriculum';
 import { masteryEstimate } from './rating';
 import { stateOf, type States } from './mixer';
-import { addDays, DAY_MS, dayKey, parseDay, startOfDay } from './time';
+import { addCalendarDays, dayKey, parseDay, startOfDay, wholeDays } from './time';
 import type { JourneyPlan, PlanAlternative, PlanWeek, Profile } from './types';
 
 export const REVIEW_SHARE = 0.25;
@@ -75,20 +75,27 @@ export function orderSkills(ids: string[], exams: Profile['exams'], states: Stat
 }
 
 function trackLabel(skillIds: string[]): string {
+  if (skillIds.length === 0) return 'reviews and checkpoints';
   const tracks = [...new Set(skillIds.map((id) => SKILL_BY_ID[id].track))];
   const names = tracks.map((t) => TRACKS.find((x) => x.id === t)!.name.toLowerCase());
   return names.length === 1 ? `${names[0]} foundations` : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-export function buildPlan(profile: Profile, states: States, now: number): JourneyPlan {
+/**
+ * Build (or rebuild) the plan. Pass the original start date when re-planning so
+ * week numbers continue and checkpoints stay on their three-week rhythm.
+ */
+export function buildPlan(profile: Profile, states: States, now: number, startedOn?: string): JourneyPlan {
   const selected = selectSkills(profile.exams);
   const open = selected.filter((id) => stateOf(states, id).status !== 'secure');
   const order = orderSkills(open, profile.exams, states);
 
   const weeklyNew = Math.max(10, profile.minutesPerDay * profile.daysPerWeek * NEW_SHARE);
   const today = startOfDay(now);
+  const origin = startedOn ? parseDay(startedOn) : today;
+  const offset = startedOn ? Math.max(0, Math.floor(wholeDays(origin, today) / 7)) : 0;
   const rolling = !profile.testDate;
-  const weeksAvailable = rolling ? Infinity : Math.max(1, Math.floor((parseDay(profile.testDate!) - today) / (7 * DAY_MS)));
+  const weeksAvailable = rolling ? Infinity : Math.max(1, Math.floor(wholeDays(today, parseDay(profile.testDate!)) / 7));
 
   const need = Object.fromEntries(order.map((id) => [id, minutesForGap(1 - masteryEstimate(stateOf(states, id).rating))]));
   const totalNeed = order.reduce((a, id) => a + need[id], 0);
@@ -113,8 +120,8 @@ export function buildPlan(profile: Profile, states: States, now: number): Journe
   const weeks: PlanWeek[] = [];
   let week: PlanWeek | null = null;
   const openWeek = () => {
-    const index = weeks.length;
-    week = { index, startsOn: dayKey(addDays(today, 7 * index)), skills: [], newMinutes: 0, checkpoint: false, secureTargets: [] };
+    const index = offset + weeks.length;
+    week = { index, startsOn: dayKey(addCalendarDays(origin, 7 * index)), skills: [], newMinutes: 0, checkpoint: false, secureTargets: [] };
     weeks.push(week);
   };
   openWeek();
@@ -137,7 +144,7 @@ export function buildPlan(profile: Profile, states: States, now: number): Journe
   if (weeks.length > 1 && weeks[weeks.length - 1].skills.length === 0) weeks.pop();
   weeks.forEach((w, i) => {
     w.newMinutes = Math.round(w.newMinutes);
-    w.checkpoint = (i + 1) % CHECKPOINT_EVERY === 0 || (i === weeks.length - 1 && weeks.length > 1);
+    w.checkpoint = (w.index + 1) % CHECKPOINT_EVERY === 0 || (i === weeks.length - 1 && w.index > 0);
   });
 
   const fits = dropped.length === 0;
@@ -147,20 +154,22 @@ export function buildPlan(profile: Profile, states: States, now: number): Journe
     alternatives.push({ kind: 'more-time', minutesPerDay: perDay });
     alternatives.push({ kind: 'narrower', keep: kept.length });
     const weeksNeeded = Math.ceil(totalNeed / weeklyNew);
-    alternatives.push({ kind: 'later-date', date: dayKey(addDays(today, 7 * weeksNeeded)) });
+    alternatives.push({ kind: 'later-date', date: dayKey(addCalendarDays(today, 7 * weeksNeeded)) });
   }
 
   const examLabel = profile.exams.length ? profile.exams.map((e) => EXAMS.find((x) => x.id === e)!.name).join(' and ') + ' ' : '';
   const first = weeks[0]?.skills ?? [];
+  const totalWeeks = offset + weeks.length;
   const summary = order.length === 0
     ? `Every skill in your plan is Secure. Keep them fresh with reviews and checkpoints.`
     : rolling
-      ? `Your rolling ${examLabel}Quant plan: ${profile.daysPerWeek} sessions a week, ${profile.minutesPerDay} minutes each, with new goals each month. Week 1: ${trackLabel(first)}.`
-      : `Your ${weeks.length}-week ${examLabel}Quant plan: ${profile.daysPerWeek} sessions a week, ${profile.minutesPerDay} minutes each. Week 1: ${trackLabel(first)}.`;
+      ? `Your rolling ${examLabel}Quant plan: ${profile.daysPerWeek} sessions a week, ${profile.minutesPerDay} minutes each, with new goals each month. Week ${offset + 1}: ${trackLabel(first)}.`
+      : `Your ${totalWeeks}-week ${examLabel}Quant plan: ${profile.daysPerWeek} sessions a week, ${profile.minutesPerDay} minutes each. Week ${offset + 1}: ${trackLabel(first)}.`;
 
   return {
     version: 1,
     createdAt: now,
+    startedOn: dayKey(origin),
     exams: profile.exams,
     testDate: profile.testDate,
     rolling,
@@ -176,9 +185,16 @@ export function buildPlan(profile: Profile, states: States, now: number): Journe
 }
 
 export function currentWeek(plan: JourneyPlan, now: number): PlanWeek | undefined {
-  const idx = Math.floor((startOfDay(now) - parseDay(plan.weeks[0]?.startsOn ?? dayKey(now))) / (7 * DAY_MS));
-  return plan.weeks[Math.min(Math.max(idx, 0), plan.weeks.length - 1)];
+  if (plan.weeks.length === 0) return undefined;
+  const start = parseDay(plan.startedOn ?? plan.weeks[0].startsOn);
+  const idx = Math.floor(wholeDays(start, now) / 7);
+  const exact = plan.weeks.find((w) => w.index === idx);
+  if (exact) return exact;
+  return idx < plan.weeks[0].index ? plan.weeks[0] : plan.weeks[plan.weeks.length - 1];
 }
+
+/** Week number of the plan's final week (1-based). */
+export const lastWeekNumber = (plan: JourneyPlan) => (plan.weeks.length ? plan.weeks[plan.weeks.length - 1].index + 1 : 0);
 
 /** Today's target skills: this week's unsecured skills, else the next unsecured skill in order. */
 export function todaysTargets(plan: JourneyPlan | undefined, states: States, now: number): string[] {
@@ -192,6 +208,6 @@ export function todaysTargets(plan: JourneyPlan | undefined, states: States, now
 /** Missed days stretch the plan; fast progress pulls later topics forward. */
 export function replanIfDue(plan: JourneyPlan | undefined, profile: Profile, states: States, now: number): JourneyPlan | undefined {
   if (!plan) return plan;
-  if (now - plan.createdAt < 7 * DAY_MS) return plan;
-  return buildPlan(profile, states, now);
+  if (wholeDays(plan.createdAt, now) < 7) return plan;
+  return buildPlan(profile, states, now, plan.startedOn ?? plan.weeks[0]?.startsOn);
 }

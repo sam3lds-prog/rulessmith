@@ -6,8 +6,8 @@ import { challengeSlot, composeSession, dueReviews, frontier, isReady, ladderNex
 import { nextPlacementItem, placementRatings, recordPlacement, startPlacement } from './placement';
 import { buildPlan, currentWeek, orderSkills, replanIfDue, selectSkills, todaysTargets } from './planner';
 import { expectedSuccess, levelForBand } from './rating';
-import { DAY_MS } from './time';
-import type { Attempt, Profile } from './types';
+import { DAY_MS, dayKey as dayKeyOf } from './time';
+import type { Attempt, Profile, SkillState } from './types';
 
 const NOW = new Date(2026, 10, 2, 9, 0, 0).getTime();
 
@@ -72,6 +72,17 @@ describe('mastery', () => {
     expect(s.evidence.length).toBe(0);
     expect(s.status).toBe('learning');
     expect(s.rating).toBeGreaterThan(1000);
+  });
+
+  it('after a missed review, Secure must be re-proved with fresh evidence', () => {
+    const evidence = Array.from({ length: 10 }, (_, i) => ({ correct: true, family: `f${i % 3}`, transfer: i === 0, day: i < 5 ? 'd1' : 'd2', level: 3, at: NOW - 1000 }));
+    let s: SkillState = { ...newSkillState('div.digit-sum'), evidence, status: 'secure', reviewStage: 0, nextReviewAt: NOW };
+    s = applyAttempt(s, attempt({ correct: false })).state;
+    expect(s.status).toBe('practicing');
+    // Old evidence still holds 9 of the last 10 correct, but it no longer counts toward Secure.
+    s = applyAttempt(s, attempt({ correct: true, at: NOW + 1000 })).state;
+    expect(s.status).toBe('practicing');
+    expect(secureGaps(s)[0]).toMatch(/7 more correct/);
   });
 
   it('a missed review demotes Secure to Practicing; a correct one extends the interval', () => {
@@ -180,6 +191,45 @@ describe('journey planner', () => {
     expect(plan.fits).toBe(false);
     expect(plan.dropped.length).toBeGreaterThan(0);
     expect(plan.alternatives.map((a) => a.kind).sort()).toEqual(['later-date', 'more-time', 'narrower']);
+  });
+
+  it('re-planning keeps week numbers moving, so checkpoints still arrive', () => {
+    const p = profile({ testDate: '2027-04-01' });
+    const plan = buildPlan(p, {}, NOW);
+    const later = NOW + 15 * DAY_MS;
+    const next = replanIfDue(plan, p, {}, later)!;
+    expect(next).not.toBe(plan);
+    expect(next.startedOn).toBe(plan.startedOn);
+    expect(currentWeek(next, later)?.index).toBe(2);
+    expect(currentWeek(next, later)?.checkpoint).toBe(true);
+    expect(next.summary).toMatch(/Week 3:/);
+  });
+
+  it('the later-date alternative fits, even across a daylight-saving change', () => {
+    for (const start of [new Date(2027, 2, 1, 9).getTime(), new Date(2027, 9, 20, 9).getTime()]) {
+      const p = profile({ testDate: '2027-03-20', minutesPerDay: 10, daysPerWeek: 3 });
+      const tight = buildPlan({ ...p, testDate: dayKeyOf(start + 14 * DAY_MS) }, {}, start);
+      const later = tight.alternatives.find((a) => a.kind === 'later-date');
+      expect(later).toBeTruthy();
+      const moved = buildPlan({ ...p, testDate: (later as { date: string }).date }, {}, start);
+      expect(moved.fits).toBe(true);
+    }
+  });
+
+  it('a plan where nothing fits still reads properly', () => {
+    const plan = buildPlan(profile({ testDate: '2026-11-09', minutesPerDay: 10, daysPerWeek: 3 }), {}, NOW);
+    expect(plan.summary).not.toMatch(/undefined/);
+  });
+
+  it('placement does not drift for a learner answering exactly as expected', () => {
+    let s = startPlacement({ exams: ['gmat'], currentLevel: { kind: 'self', rating: 3 } });
+    const start = s.theta;
+    for (let i = 0; i < 6; i++) {
+      const item = nextPlacementItem(s)!;
+      // Alternate right and wrong around a 60% target: expected net change is small.
+      s = recordPlacement(s, { ...item, correct: i % 5 !== 1 && i % 5 !== 3 });
+    }
+    expect(Math.abs(s.theta - start)).toBeLessThan(150);
   });
 
   it('gives a rolling plan without a test date, and re-plans after a week', () => {

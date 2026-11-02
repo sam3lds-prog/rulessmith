@@ -58,6 +58,8 @@ export interface EvidenceEntry {
   transfer: boolean;
   day: string;
   level: number;
+  /** Timestamp of the attempt (used to ignore evidence from before a demotion). */
+  at?: number;
 }
 
 export interface SkillState {
@@ -71,6 +73,8 @@ export interface SkillState {
   secureAt?: number;
   reviewStage: number;
   nextReviewAt?: number;
+  /** When a Secure skill was demoted; only evidence after this counts toward re-securing it. */
+  demotedAt?: number;
   /** Rolling average time for unaided correct answers. Fluency, tracked separately from understanding. */
   fluencyMs?: number;
   lastSeenAt?: number;
@@ -99,6 +103,8 @@ export interface PlanWeek {
 export interface JourneyPlan {
   version: 1;
   createdAt: number;
+  /** ISO date the journey began. Weekly re-plans keep it, so week numbers keep advancing. */
+  startedOn: string;
   exams: ExamId[];
   testDate?: string;
   rolling: boolean;

@@ -1,4 +1,5 @@
 import { Redirect, router } from 'expo-router';
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SessionBreakAdCard } from '../ads/AdSlots';
 import { skillName } from '../content';
@@ -11,19 +12,24 @@ import { color, font, space, type } from '../ui/theme';
 export default function RecapScreen() {
   const s = useApp();
   const r = s.lastRecap;
+  // Decided once per visit: at most one card per session, and never again on a revisit or reload.
+  const [showAd] = useState(
+    () =>
+      !!r &&
+      shouldShowSessionBreakAd({
+        adsEnabled: adsLive(s),
+        ageBand: s.profile?.ageBand,
+        premium: isPremium(s.entitlements, Date.now()),
+        completedSessions: s.sessionsCompleted,
+        endedOnMiss: r.endedOnMiss,
+        timedChallenge: r.timed,
+        alreadyShown: r.adShown,
+      }),
+  );
   if (!r) return <Redirect href="/today" />;
 
   // Order matters on this screen: what you proved first, then what's next, then (maybe) one ad card,
   // then your own Continue button, which sits outside the ad.
-  const showAd = shouldShowSessionBreakAd({
-    adsEnabled: adsLive(s),
-    ageBand: s.profile?.ageBand,
-    premium: isPremium(s.entitlements, Date.now()),
-    completedSessions: s.sessionsCompleted,
-    endedOnMiss: r.endedOnMiss,
-    timedChallenge: r.timed,
-    alreadyShown: false,
-  });
 
   return (
     <Screen footer={<Button title="Continue" onPress={() => router.replace('/today')} />}>

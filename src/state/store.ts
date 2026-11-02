@@ -149,7 +149,8 @@ interface Actions {
   currentItem(): Item | undefined;
   recordAnswer(item: Item, r: { correct: boolean; hint: boolean; ms: number }): SessionResult;
   advance(): { done: boolean };
-  finishSession(): Recap | undefined;
+  /** early: the learner ended the run before its last puzzle (no tokens, not a completed session). */
+  finishSession(opts?: { early?: boolean }): Recap | undefined;
   abandonSession(): void;
   markAdShown(): void;
 
@@ -179,7 +180,15 @@ const SYNCED_KEYS = ['profile', 'plan', 'skills', 'sessionsCompleted', 'tokens',
 
 export type AppState = Data & Actions & { hydrated: boolean };
 
+// Optional keys are listed as undefined on purpose: zustand merges state, so a key
+// missing here would survive "Delete my data".
 const INITIAL: Data = {
+  profile: undefined,
+  plan: undefined,
+  placement: undefined,
+  active: undefined,
+  lastRecap: undefined,
+  triedPuzzle: undefined,
   skills: {},
   attempts: [],
   sessionsCompleted: 0,
@@ -201,7 +210,8 @@ const serverStorage: StateStorage = { getItem: () => null, setItem: () => undefi
 const storageBackend = (): StateStorage =>
   Platform.OS === 'web' && typeof window === 'undefined' ? serverStorage : AsyncStorage;
 
-const COUNTED_MODES: SessionMode[] = ['journey', 'skill', 'review', 'ladder'];
+// Reviews of secured skills and the planned checkpoint stay free; everything else uses a run.
+const COUNTED_MODES: SessionMode[] = ['journey', 'skill', 'ladder', 'challenge'];
 const ATTEMPT_LOG_CAP = 400;
 const SEED_MEMORY = 40;
 
@@ -267,10 +277,13 @@ export const useApp = create<AppState>()(
         setPlacement: (placement) => set({ placement }),
         applyPlacementRatings: (ratings) => {
           const skills = { ...get().skills };
+          const attempts = get().attempts;
           for (const [id, rating] of Object.entries(ratings)) {
             const prev = skills[id] ?? newSkillState(id);
-            // Placement sets a starting point only; it never grants evidence.
-            skills[id] = { ...prev, rating: prev.attempts > 0 ? prev.rating : rating };
+            // Placement sets the starting rating. Its own answers (mode 'try') don't block that;
+            // real practice does, so re-running onboarding never wipes earned progress.
+            const onlyPlacement = attempts.filter((x) => x.skillId === id).every((x) => x.mode === 'try');
+            skills[id] = { ...prev, rating: prev.attempts === 0 || onlyPlacement ? rating : prev.rating };
           }
           set({ skills });
         },
@@ -326,6 +339,7 @@ export const useApp = create<AppState>()(
               break;
             }
             case 'checkpoint': {
+              if (s.checkpoints.some((c) => now - c.at < 6 * 86400000)) return { ok: false, reason: 'empty' };
               slots = checkpointSession(s.skills, pick(), 10);
               title = 'Checkpoint';
               break;
@@ -387,6 +401,8 @@ export const useApp = create<AppState>()(
 
         recordAnswer: (item, r) => {
           const a = get().active;
+          // Each slot is graded once. After a resume the same item may be on screen again.
+          if (a && a.results.length > a.index) return a.results[a.index];
           const outcome = applyOne(item, r, a?.mode ?? 'journey');
           const result: SessionResult = {
             itemId: item.id,
@@ -425,10 +441,11 @@ export const useApp = create<AppState>()(
           return { done: index >= a.slots.length };
         },
 
-        finishSession: () => {
+        finishSession: (opts = {}) => {
           const s = get();
           const a = s.active;
           if (!a) return undefined;
+          const early = Boolean(opts.early);
           const now = Date.now();
           const results = a.results;
           const proved = new Map<string, DisplayStatus>();
@@ -440,13 +457,13 @@ export const useApp = create<AppState>()(
           const needsWork = touched.filter((id) => !proved.has(id) && results.some((r) => r.skillId === id && !r.correct));
           const practiced = touched.filter((id) => !proved.has(id) && !needsWork.includes(id));
           const correct = results.filter((r) => r.correct).length;
-          const tokens = results.length > 0 ? TOKEN_REWARDS.sessionComplete : 0;
+          const tokens = results.length > 0 && !early ? TOKEN_REWARDS.sessionComplete : 0;
 
           let ladder: Recap['ladder'];
           let ladderBest = s.ladderBest;
           if (a.ladder) {
             const best = s.ladderBest[a.ladder.skillId] ?? 0;
-            const newBest = a.ladder.peak > best && correct > 0;
+            const newBest = a.ladder.peak > best && correct > 0 && !early;
             if (newBest) ladderBest = { ...ladderBest, [a.ladder.skillId]: a.ladder.peak };
             ladder = { skillId: a.ladder.skillId, peak: correct > 0 ? a.ladder.peak : 0, best: Math.max(best, correct > 0 ? a.ladder.peak : 0), newBest };
           }
@@ -458,7 +475,7 @@ export const useApp = create<AppState>()(
           const recap: Recap = {
             id: a.id,
             mode: a.mode,
-            title: a.title,
+            title: early ? `${a.title} (ended early)` : a.title,
             correct,
             total: results.length,
             proved: [...proved.entries()].map(([skillId, to]) => ({ skillId, to })),
@@ -472,7 +489,7 @@ export const useApp = create<AppState>()(
             adShown: false,
           };
 
-          const sessionsCompleted = s.sessionsCompleted + (results.length > 0 ? 1 : 0);
+          const sessionsCompleted = s.sessionsCompleted + (results.length > 0 && !early ? 1 : 0);
           set({
             active: undefined,
             lastRecap: recap,
@@ -482,7 +499,7 @@ export const useApp = create<AppState>()(
             ladderBest,
             checkpoints: a.mode === 'checkpoint' ? [...s.checkpoints, { at: now, correct, total: results.length }] : s.checkpoints,
           });
-          track('session_completed', { mode: a.mode, correct, total: results.length });
+          track('session_completed', { mode: a.mode, correct, total: results.length, early });
           if (s.sessionsCompleted === 0 && results.length > 0) track('mission_activated', {});
           void get().syncNow();
           return recap;
@@ -587,7 +604,17 @@ export const useApp = create<AppState>()(
               // The account has more progress than this device: adopt it.
               set({ ...(remote.state as Partial<Data>) });
             }
-            set({ account: { mode: 'cloud', email, userId, savedAt: Date.now(), syncedAttemptAt: restored ? Date.now() : 0, reportsSynced: 0 } });
+            set({
+              account: {
+                mode: 'cloud',
+                email,
+                userId,
+                savedAt: Date.now(),
+                // Counters carry over only when it's the same account signing back in.
+                syncedAttemptAt: restored ? Date.now() : local.account.email === email ? (local.account.syncedAttemptAt ?? 0) : 0,
+                reportsSynced: local.account.email === email ? (local.account.reportsSynced ?? 0) : 0,
+              },
+            });
             await get().syncNow();
             track('plan_saved', { mode: 'cloud', restored });
             return { ok: true, restored };
@@ -616,7 +643,8 @@ export const useApp = create<AppState>()(
           try {
             await cloud.signOut();
           } finally {
-            set({ account: { mode: 'device', savedAt: Date.now() } });
+            const prev = get().account;
+            set({ account: { mode: 'device', email: prev.email, savedAt: Date.now(), syncedAttemptAt: prev.syncedAttemptAt, reportsSynced: prev.reportsSynced } });
           }
         },
       };

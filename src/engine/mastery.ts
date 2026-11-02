@@ -48,7 +48,8 @@ export function displayStatus(s: SkillState | undefined, now: number): DisplaySt
 /** What the Secure rule still needs, in learner language. Empty when Secure. */
 export function secureGaps(s: SkillState): string[] {
   if (s.status === 'secure') return [];
-  const win = s.evidence.slice(-SECURE_RULE.window);
+  const ev = s.demotedAt !== undefined ? s.evidence.filter((e) => (e.at ?? 0) > (s.demotedAt as number)) : s.evidence;
+  const win = ev.slice(-SECURE_RULE.window);
   const right = win.filter((e) => e.correct);
   const gaps: string[] = [];
   const more = SECURE_RULE.minCorrect - right.length;
@@ -58,6 +59,14 @@ export function secureGaps(s: SkillState): string[] {
   if (new Set(right.map((e) => e.day)).size < SECURE_RULE.minDays) gaps.push('practice on another day');
   if (!right.some((e) => e.transfer)) gaps.push('one unfamiliar problem');
   return gaps;
+}
+
+function demote(s: SkillState, now: number) {
+  s.status = 'practicing';
+  s.reviewStage = 0;
+  s.nextReviewAt = undefined;
+  s.secureAt = undefined;
+  s.demotedAt = now;
 }
 
 const scheduleNext = (now: number, stage: number) =>
@@ -80,7 +89,7 @@ export function applyAttempt(prev: SkillState, a: Attempt, now = a.at): AttemptO
   s.rating = updateRating(prev.rating, a.level, a.correct, k);
 
   if (!a.hintBeforeAnswer) {
-    s.evidence.push({ correct: a.correct, family: a.family, transfer: a.transfer, day: dayKey(a.at), level: a.level });
+    s.evidence.push({ correct: a.correct, family: a.family, transfer: a.transfer, day: dayKey(a.at), level: a.level, at: a.at });
     if (s.evidence.length > EVIDENCE_CAP) s.evidence.splice(0, s.evidence.length - EVIDENCE_CAP);
     if (a.correct) s.fluencyMs = s.fluencyMs === undefined ? a.ms : Math.round(s.fluencyMs * 0.7 + a.ms * 0.3);
   }
@@ -92,25 +101,20 @@ export function applyAttempt(prev: SkillState, a: Attempt, now = a.at): AttemptO
         s.reviewStage = prev.reviewStage + 1;
         s.nextReviewAt = scheduleNext(now, s.reviewStage);
       } else {
-        s.status = 'practicing';
-        s.reviewStage = 0;
-        s.nextReviewAt = undefined;
-        s.secureAt = undefined;
+        demote(s, now);
       }
     } else if (!a.correct) {
       const win = s.evidence.slice(-SECURE_RULE.window);
-      if (win.filter((e) => e.correct).length < SECURE_RULE.minCorrect) {
-        s.status = 'practicing';
-        s.reviewStage = 0;
-        s.nextReviewAt = undefined;
-        s.secureAt = undefined;
-      }
+      if (win.filter((e) => e.correct).length < SECURE_RULE.minCorrect) demote(s, now);
     }
     return { state: s, from, to: displayStatus(s, now) };
   }
 
-  if (meetsSecure(s.evidence)) {
+  // After a demotion, Secure has to be re-proved with fresh evidence only.
+  const fresh = s.demotedAt !== undefined ? s.evidence.filter((e) => (e.at ?? 0) > (s.demotedAt as number)) : s.evidence;
+  if (meetsSecure(fresh)) {
     s.status = 'secure';
+    s.demotedAt = undefined;
     s.secureAt = now;
     s.reviewStage = 0;
     s.nextReviewAt = scheduleNext(now, 0);

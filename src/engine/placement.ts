@@ -57,7 +57,10 @@ export function nextPlacementItem(s: PlacementState): { skillId: string; level: 
 
 export function recordPlacement(s: PlacementState, answer: PlacementAnswer): PlacementState {
   const k = Math.max(40, 120 - 10 * s.answers.length);
-  const theta = updateRating(s.theta + 40 * depthOf(answer.skillId), answer.level, answer.correct, k) - 40 * depthOf(answer.skillId);
+  // The item was aimed at the learner's effective ability on this skill (theta − 40 × depth),
+  // so update that, then convert back.
+  const offset = 40 * depthOf(answer.skillId);
+  const theta = updateRating(s.theta - offset, answer.level, answer.correct, k) + offset;
   const answers = [...s.answers, answer];
   const recentDeltas = [...s.recentDeltas, Math.abs(theta - s.theta)].slice(-4);
   const settled = answers.length >= PLACEMENT_MIN && recentDeltas.length === 4 && recentDeltas.every((d) => d < 35);

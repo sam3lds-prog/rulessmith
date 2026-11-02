@@ -68,6 +68,8 @@ create table if not exists public.content_reports (
 );
 
 create index if not exists content_reports_item_idx on public.content_reports (item_id);
+-- Re-syncing from a device must not create duplicate reports.
+create unique index if not exists content_reports_dedupe_idx on public.content_reports (user_id, item_id, created_at);
 
 alter table public.content_reports enable row level security;
 
@@ -95,29 +97,10 @@ create policy "learner reads own entitlements" on public.entitlements
   for select using (auth.uid() = user_id);
 
 -- ------------------------------------------------------------------ account deletion
--- Required by the App Store: learners can delete their account from inside the app.
-create or replace function public.delete_my_account()
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  uid uuid := auth.uid();
-begin
-  if uid is null then
-    raise exception 'not signed in';
-  end if;
-  delete from public.attempts where user_id = uid;
-  delete from public.learner_state where user_id = uid;
-  delete from public.entitlements where user_id = uid;
-  update public.content_reports set user_id = null where user_id = uid;
-  delete from auth.users where id = uid;
-end;
-$$;
-
-revoke all on function public.delete_my_account() from public;
-grant execute on function public.delete_my_account() to authenticated;
+-- In-app account deletion (an App Store requirement) is done by the Edge Function
+-- supabase/functions/delete-account, which calls auth.admin.deleteUser with the
+-- service role. Deleting the auth user cascades to learner_state, attempts and
+-- entitlements, and detaches content_reports (user_id set null).
 
 -- ------------------------------------------------------------------ quality loop view
 -- Per-family, per-level stats for the weekly content review. Auto-flag families

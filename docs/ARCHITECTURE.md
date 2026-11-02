@@ -65,7 +65,7 @@ With Supabase configured and an adult account, the store pushes a snapshot plus 
 | `attempts` | the app | Every answer: the quality loop and difficulty calibration |
 | `content_reports` | the app | "Report a problem", with item id and content version |
 | `entitlements` | the server only (RevenueCat webhook) | Source of truth for what a learner owns |
-| `delete_my_account()` | the app | In-app account deletion (App Store requirement) |
+| `functions/delete-account` | the app (Edge Function, service role) | In-app account deletion (App Store requirement); rows cascade |
 | `family_quality` view | analysts | Success rate, hint rate, median time and reports per family and level |
 
 Row-level security on every table: learners reach only their own rows.

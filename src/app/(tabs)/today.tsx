@@ -4,7 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { skillName } from '../../content';
 import { displayStatus } from '../../engine/mastery';
 import { dueReviews, stateOf } from '../../engine/mixer';
-import { currentWeek, todaysTargets } from '../../engine/planner';
+import { currentWeek, lastWeekNumber, todaysTargets } from '../../engine/planner';
 import { dayKey } from '../../engine/time';
 import { isPremium } from '../../monetization/entitlements';
 import { TOKEN_COSTS } from '../../monetization/tokens';
@@ -27,7 +27,9 @@ export default function Today() {
   const runsLeft = s.runsLeft();
   const dailyDone = s.daily[dayKey(now)];
   const items = !s.profile.minutesPerDay ? 8 : s.profile.minutesPerDay <= 10 ? 6 : s.profile.minutesPerDay <= 20 ? 8 : 10;
-  const hasCheckpointPool = Object.values(s.skills).some((x) => x.status === 'practicing' || x.status === 'secure');
+  const hasCheckpointPool =
+    Object.values(s.skills).some((x) => x.status === 'practicing' || x.status === 'secure') &&
+    !s.checkpoints.some((c) => now - c.at < 6 * 86400000);
   const rewardedOk = canOfferRewarded({ adsEnabled: adsLive(s), ageBand: s.profile.ageBand, premium });
 
   const start = (mode: 'journey' | 'review' | 'checkpoint') => {
@@ -49,7 +51,7 @@ export default function Today() {
       <Title style={{ marginTop: space.xs }}>Today</Title>
       {week ? (
         <Small style={{ marginTop: space.xs }}>
-          Week {week.index + 1} of {s.plan.weeks.length}
+          Week {week.index + 1} of {lastWeekNumber(s.plan)}
           {week.secureTargets.length ? `: aim to secure ${week.secureTargets.map(skillName).join(' and ')}.` : '.'}
         </Small>
       ) : null}

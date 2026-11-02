@@ -25,3 +25,13 @@ export function startOfDay(ts: number): number {
 export function formatShortDate(ts: number): string {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+
+/** Add calendar days (safe across daylight-saving changes, unlike adding milliseconds). */
+export function addCalendarDays(ts: number, days: number): number {
+  const d = new Date(ts);
+  d.setDate(d.getDate() + days);
+  return d.getTime();
+}
+
+/** Whole calendar days from a to b, rounded so a daylight-saving hour never loses a day. */
+export const wholeDays = (a: number, b: number) => Math.round((startOfDay(b) - startOfDay(a)) / DAY_MS);

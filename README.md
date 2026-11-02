@@ -69,7 +69,7 @@ npm run build:web    # static site in dist/; deploy to any static host
 
 Copy `.env.example` to `.env`. Everything is optional: with no values the app runs fully on the device, ads stay off, and purchases use the test provider.
 
-- `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`: cloud sync. Apply `supabase/migrations/` to your project first, and add `{{ .Token }}` to the Magic Link email template so sign-in emails carry a 6-digit code.
+- `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`: cloud sync. Apply `supabase/migrations/` to your project (`supabase db push`), deploy the account-deletion function (`supabase functions deploy delete-account`), and add `{{ .Token }}` to the Magic Link email template so sign-in emails carry a 6-digit code.
 - `EXPO_PUBLIC_ADS_ENABLED`: leave `false` until 4 to 8 weeks after launch.
 - `EXPO_PUBLIC_REVENUECAT_*`: wired in Phase 4 (`docs/MONETIZATION.md`).
 

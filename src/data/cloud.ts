@@ -103,12 +103,16 @@ export async function pushReports(userId: string, reports: ContentReport[]) {
   if (!reports.length) return;
   const { error } = await supabase()
     .from('content_reports')
-    .insert(reports.map((r) => ({ user_id: userId, item_id: r.itemId, content_version: r.contentVersion, reason: r.reason, created_at: new Date(r.at).toISOString() })));
+    .upsert(
+      reports.map((r) => ({ user_id: userId, item_id: r.itemId, content_version: r.contentVersion, reason: r.reason, created_at: new Date(r.at).toISOString() })),
+      { onConflict: 'user_id,item_id,created_at', ignoreDuplicates: true },
+    );
   if (error) throw new Error(error.message);
 }
 
+/** Deletes the auth user server-side (supabase/functions/delete-account); rows cascade. */
 export async function deleteAccount() {
-  const { error } = await supabase().rpc('delete_my_account');
+  const { error } = await supabase().functions.invoke('delete-account', { method: 'POST' });
   if (error) throw new Error(error.message);
-  await signOut();
+  await supabase().auth.signOut({ scope: 'local' });
 }
