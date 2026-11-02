@@ -85,6 +85,15 @@ with u as (update public.learner_state set state = '{"v":2}', version = 2 where 
 select 'version now: ' || version from public.learner_state where user_id = :'A';
 commit;
 
+\echo '--- 12c. an older app cannot push an older snapshot shape over a newer one (expect "update the app" error, then v 3)'
+begin; set local role authenticated; select set_config('request.jwt.claim.sub', :'A', true) \g /dev/null
+update public.learner_state set state = '{"v":3,"quests":{}}', version = 3 where user_id = :'A' and version = 2;
+commit;
+begin; set local role authenticated; select set_config('request.jwt.claim.sub', :'A', true) \g /dev/null
+update public.learner_state set state = '{"v":2}', version = 4 where user_id = :'A' and version = 3;
+rollback;
+select 'stored snapshot v: ' || (state ->> 'v') || ', version ' || version from public.learner_state where user_id = :'A';
+
 \echo '--- 12b. learner B cannot see or change A''s snapshot (expect 0, then 0)'
 begin; set local role authenticated; select set_config('request.jwt.claim.sub', :'B', true) \g /dev/null
 select 'B sees snapshots: ' || count(*) from public.learner_state;

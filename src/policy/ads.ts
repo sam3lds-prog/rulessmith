@@ -31,12 +31,15 @@ export function shouldShowSessionBreakAd(c: SessionBreakContext): boolean {
   return true;
 }
 
-export type BrowseScreen = 'topics' | 'progress';
-/** Banners only on browse screens: never on the puzzle board, the explanation or the recap. */
-const BANNER_SCREENS: string[] = ['topics', 'progress'];
+export type BrowseScreen = 'plan' | 'practice';
+/**
+ * Banners only on the Plan and Practice browse screens: never on the puzzle
+ * board, the explanation, the recap, Play or the Workshop.
+ */
+const BANNER_SCREENS: BrowseScreen[] = ['plan', 'practice'];
 
 export function shouldShowBanner(screen: string, c: Pick<SessionBreakContext, 'adsEnabled' | 'ageBand' | 'premium'>): boolean {
-  return c.adsEnabled && !c.premium && policyFor(c.ageBand).canSeeAds && BANNER_SCREENS.includes(screen);
+  return c.adsEnabled && !c.premium && policyFor(c.ageBand).canSeeAds && (BANNER_SCREENS as string[]).includes(screen);
 }
 
 /** Rewarded ads are opt-in and only for adults; the reward is a bonus run or tokens, never a hint. */

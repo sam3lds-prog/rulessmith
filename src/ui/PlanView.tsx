@@ -36,7 +36,7 @@ export function PlanView({
       <Body style={{ fontFamily: font.bodyBold, fontSize: 19, lineHeight: 27 }}>{plan.summary}</Body>
 
       {!plan.fits ? (
-        <Plate tone="brass">
+        <Plate tone="warm">
           <Label>This plan doesn't fit before your test date.</Label>
           <Small style={{ color: color.ink }}>
             It covers the {plan.order.length - plan.dropped.length} most important skills and leaves out {plan.dropped.length}:{' '}
@@ -68,7 +68,7 @@ export function PlanView({
             ) : (
               <Small>Keep going on the skills above.</Small>
             )}
-            {w.checkpoint ? <Small style={{ color: color.brass, fontFamily: font.bodyBold }}>Checkpoint at the end of this week: mixed, unfamiliar problems.</Small> : null}
+            {w.checkpoint ? <Small style={{ color: color.gold, fontFamily: font.bodyBold }}>Checkpoint at the end of this week: mixed, unfamiliar problems.</Small> : null}
           </View>
         ))}
       </View>
@@ -80,7 +80,7 @@ export function PlanView({
 
 const styles = StyleSheet.create({
   week: { paddingVertical: space.md, borderTopWidth: 1, borderTopColor: color.rule, gap: 6 },
-  weekNow: { borderTopWidth: 3, borderTopColor: color.cobalt },
+  weekNow: { borderTopWidth: 3, borderTopColor: color.action },
   weekHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   skillLine: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 30 },
 });

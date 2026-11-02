@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { color, font, radius } from '../ui/theme';
+import { color, depth, font, radius } from '../ui/theme';
 
 export type TileState = 'idle' | 'selected' | 'placed' | 'right' | 'wrong' | 'fixed' | 'empty';
 export type TileSize = 'lg' | 'md' | 'sm';
@@ -11,11 +11,11 @@ const SIZES: Record<TileSize, { h: number; px: number; fs: number; depth: number
 };
 
 const PALETTE: Record<TileState, { bg: string; border: string; base: string; text: string; dashed?: boolean }> = {
-  idle: { bg: color.surface, border: color.ruleStrong, base: '#9AA597', text: color.ink },
-  selected: { bg: color.cobalt, border: color.cobalt, base: color.cobaltDeep, text: color.white },
-  placed: { bg: color.surface, border: color.ruleStrong, base: '#9AA597', text: color.ink },
-  right: { bg: color.verdigrisWash, border: color.verdigris, base: color.verdigris, text: color.ink },
-  wrong: { bg: color.brickWash, border: color.brick, base: color.brick, text: color.ink },
+  idle: { bg: color.surface, border: color.rule, base: depth.key, text: color.ink },
+  selected: { bg: color.action, border: color.action, base: color.actionDeep, text: color.white },
+  placed: { bg: color.surface, border: color.rule, base: depth.key, text: color.ink },
+  right: { bg: color.rightWash, border: color.right, base: color.right, text: color.ink },
+  wrong: { bg: color.wrongWash, border: color.wrong, base: color.wrong, text: color.ink },
   fixed: { bg: color.paperDeep, border: color.paperDeep, base: color.paperDeep, text: color.inkSoft },
   empty: { bg: 'transparent', border: color.ruleStrong, base: 'transparent', text: color.inkFaint, dashed: true },
 };
@@ -68,7 +68,7 @@ export function Tile({
         {label}
       </Text>
       {state === 'right' || state === 'wrong' ? (
-        <Text style={[styles.mark, { color: state === 'right' ? color.verdigris : color.brick }]}>{state === 'right' ? '✓' : '✗'}</Text>
+        <Text style={[styles.mark, { color: state === 'right' ? color.right : color.wrong }]}>{state === 'right' ? '✓' : '✗'}</Text>
       ) : null}
     </View>
   );
@@ -97,6 +97,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
   },
-  text: { fontFamily: font.bodyBold, fontVariant: ['tabular-nums'], letterSpacing: 0.3 },
+  text: { fontFamily: font.num, fontVariant: ['tabular-nums'], letterSpacing: 0.3 },
   mark: { fontFamily: font.heading, fontSize: 15 },
 });

@@ -259,6 +259,56 @@ const digitSumCount: Template = {
   },
 };
 
+/** Claims that separate "divisible by 3" from "divisible by 9" (Rule Breaker, the Gatehouse chapter). */
+const DIGIT_SUM_CLAIMS: ClaimBankEntry[] = [
+  {
+    text: 'Every multiple of 3 is a multiple of 9.',
+    claim: claim1([div(3)], [div(9)]),
+    isTrue: false,
+    why: 'A digit sum can be a multiple of 3 without being a multiple of 9: 12 has digit sum 3.',
+  },
+  {
+    text: 'Every multiple of 9 is a multiple of 3.',
+    claim: claim1([div(9)], [div(3)]),
+    isTrue: true,
+    why: '9 = 3 × 3, so whatever 9 divides, 3 divides too. A digit sum that is a multiple of 9 is also a multiple of 3.',
+  },
+  {
+    text: 'Every multiple of 6 is a multiple of 9.',
+    claim: claim1([div(6)], [div(9)]),
+    isTrue: false,
+    why: '6 needs a digit sum that is a multiple of 3 and an even number; that is not enough for 9.',
+  },
+  {
+    text: 'If a number is divisible by 9, it is divisible by 6.',
+    claim: claim1([div(9)], [div(6)]),
+    isTrue: false,
+    why: '6 also needs the number to be even, and an odd multiple of 9 like 9 or 27 is not.',
+  },
+  {
+    text: 'Every number divisible by 3 and by 9 is divisible by 27.',
+    claim: claim1([div(3), div(9)], [div(27)]),
+    isTrue: false,
+    why: 'The digit-sum test stops at 9: 18 passes both tests but is not a multiple of 27.',
+  },
+];
+
+const digitSumRefute: Template = {
+  id: 'div.digit-sum/refute',
+  skillId: 'div.digit-sum',
+  board: 'refute',
+  version: 1,
+  generate: ({ rng, level }) =>
+    makeRefute({
+      rng,
+      // The first three claims are the core 3-versus-9 contrast; harder levels add 6 and 27.
+      entry: rng.pick(level <= 3 ? DIGIT_SUM_CLAIMS.slice(0, 3) : DIGIT_SUM_CLAIMS),
+      varNames: ['n'],
+      lens: DS_LENS,
+      hints: ['Try small multiples first: 3, 6, 9, 12…', 'One number that meets the "if" part but not the "then" part breaks the claim.'],
+    }),
+};
+
 // ================================================================ div.last-two
 
 const LT_LENS = 'Divisible by 4: the last two digits form a multiple of 4. By 8: the last three digits form a multiple of 8.';
@@ -937,6 +987,7 @@ export const DIVISIBILITY_TEMPLATES: Template[] = [
   digitSumSort,
   digitSumConstruct,
   digitSumCount,
+  digitSumRefute,
   lastTwoSort,
   lastTwoConstruct,
   lastTwoRefute,

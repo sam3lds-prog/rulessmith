@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { optionIsCorrect } from './check';
-import { claimHolds, enumerateFills, evalPred } from './evaluate';
+import { claimHolds, enumerateFills, evalPred, evalValue, isPrimeBrute } from './evaluate';
 import { FREE_MAX_LEVEL } from '../config';
 import { checkItem, generateItem, SKILLS, TEMPLATES, templatesForSkill } from './index';
 
@@ -91,6 +91,23 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('%s', (id, template) => 
           }
           case 'numeric':
             break;
+          case 'factor': {
+            // Composite with at least three prime pieces, so there is something to split twice.
+            expect(isPrimeBrute(BigInt(p.n)), where).toBe(false);
+            expect(item.key.kind === 'factor' && item.key.primes.length >= 3, where).toBe(true);
+            // A wrong tree (one piece left unsplit) is rejected.
+            const primes = item.key.kind === 'factor' ? item.key.primes : [];
+            expect(checkItem(item, { kind: 'factor', primes: [primes[0] * primes[1], ...primes.slice(2)] }).correct, where).toBe(false);
+            break;
+          }
+          case 'rail': {
+            const v = evalValue(p.spec);
+            const right = p.stops.filter((st) => BigInt(st.value) === v);
+            expect(right.length, `${where} exactly one stop is right`).toBe(1);
+            expect(p.stops.length, where).toBe(p.loop);
+            expect(p.stops.length, where).toBeGreaterThanOrEqual(2);
+            break;
+          }
         }
       }
     }

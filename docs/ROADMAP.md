@@ -10,7 +10,7 @@ Phases and gates follow the build plan (Nov 1, 2026). Dates assume 15 to 20 hour
 | 0. Set up and discover | Nov 2026 | Repo and app scaffold done. **Still yours:** trademark search on the five names, employment agreement IP check, Apple developer account, 10 GMAT/GRE interviews, competitor teardown, review the 8 divisibility micro-skills |
 | 1. Divisibility prototype | Dec 2026 to Jan 2027 | **Built:** Sort, Construct and Refute boards with tap alternatives; full solution-set checkers; worked explanations, hints, transfer items; local skill model; second-session review; shareable web build |
 | Gate A | Jan 24, 2027 | Of 12 testers: 8 finish a mission unaided, 6 choose an extra run, 4 return within a week |
-| 2. Profile, journey, closed beta | Feb to Mar 2027 | **Built:** profile, placement, journey planner, Today screen, spaced review, three tracks (divisibility, primes and factors, remainders), Supabase sign-in and sync. **To do:** create the Supabase project, TestFlight beta with 30 to 50 adults, human content review of all 54 families |
+| 2. Profile, journey, closed beta | Feb to Mar 2027 | **Built:** profile, placement, journey planner, Play screen, spaced review, three tracks (divisibility, primes and factors, remainders), Supabase sign-in and sync. **To do:** create the Supabase project, TestFlight beta with 30 to 50 adults, human content review of all 58 families |
 | 3. Learning pilot, six tracks | Apr to May 2027 | **To do:** pilot with pre-test, unseen post-test and one-week delayed test; fractions and decimals, ratios and rates, percentages via the content factory |
 | Gate B | May 23, 2027 | Measurable improvement on unseen, non-game questions |
 | 4. Payments, ads, compliance | late May to early Jul 2027 | **Rules built and tested.** To do: RevenueCat + store products, AdMob, native age signals (Utah duties start May 6, 2027), privacy policy and terms (legal review), App Store review |
@@ -29,7 +29,7 @@ Phases and gates follow the build plan (Nov 1, 2026). Dates assume 15 to 20 hour
 | Price | $9.99/mo, $59.99/yr with 14-day trial |
 | Packs and Premium | Premium includes every pack; packs are for non-subscribers |
 | Ads | Built, switched off; on for adults 4 to 8 weeks after launch |
-| Tokens | Earned only, spent on bonus runs (cosmetics later) |
+| Workshop Coins | Earned only, spent on workshop objects and bonus runs |
 | Business setup | Not code: form an LLC and business bank account before taking payments |
 
 ## Launch checklist (not code)

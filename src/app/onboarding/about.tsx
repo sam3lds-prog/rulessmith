@@ -262,5 +262,5 @@ const styles = StyleSheet.create({
     color: color.ink,
     backgroundColor: color.surface,
   },
-  note: { backgroundColor: color.brassWash, padding: space.md, borderRadius: radius.sm, fontSize: 16 },
+  note: { backgroundColor: color.goldWash, padding: space.md, borderRadius: radius.sm, fontSize: 16 },
 });

@@ -26,6 +26,10 @@ function board(item: Item): string[] {
       return p.options.map((o) => `${optionIsCorrect(p, o) ? '**[correct]**' : '[wrong]'} ${o.label}${o.misconception ? ` (misconception: \`${o.misconception}\`)` : optionIsCorrect(p, o) ? '' : ' (no misconception tag)'}`);
     case 'numeric':
       return [`Type a whole number${p.unit ? ` (${p.unit})` : ''}`];
+    case 'factor':
+      return [`Split ${fmt(p.n)} into factor pairs until every piece is prime`];
+    case 'rail':
+      return [`Walk: ${p.walk} round a loop of ${p.loop}`, `Stops: ${p.stops.map((st) => st.label).join(' | ')}`];
   }
 }
 

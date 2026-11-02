@@ -16,14 +16,30 @@
 import { applyAttempt, newSkillState } from '../engine/mastery';
 import { dayKey } from '../engine/time';
 import type { Attempt } from '../engine/types';
-import type { Baseline, ContentReport, Data, PlacementRun, SessionLogEntry, States, TokenEntry } from '../state/types';
+import type { Quests } from '../quests/chapters';
+import type { Grant } from '../rewards/ledger';
+import type { Baseline, CheckRecord, ContentReport, Data, PlacementRun, SessionLogEntry, States, TokenEntry } from '../state/types';
 
 /** Fields that follow a learner to another device in the server snapshot (learner_state.state). */
-export const SYNCED_KEYS = ['profile', 'plan', 'placementRuns', 'baseline', 'tokenLedger', 'sessionLog', 'daily', 'ladderBest', 'checkpoints'] as const;
+export const SYNCED_KEYS = [
+  'profile',
+  'plan',
+  'placementRuns',
+  'baseline',
+  'tokenLedger',
+  'sessionLog',
+  'daily',
+  'ladderBest',
+  'checkpoints',
+  'quests',
+  'grants',
+  'checks',
+  'project',
+] as const;
 export type Synced = Pick<Data, (typeof SYNCED_KEYS)[number]>;
 
 /** Version tag written into server snapshots. */
-export const SNAPSHOT_VERSION = 2;
+export const SNAPSHOT_VERSION = 3;
 
 export function pickSynced(d: Data): Synced {
   return {
@@ -36,7 +52,33 @@ export function pickSynced(d: Data): Synced {
     daily: d.daily,
     ladderBest: d.ladderBest,
     checkpoints: d.checkpoints,
+    quests: d.quests,
+    grants: d.grants,
+    checks: d.checks,
+    project: d.project,
   };
+}
+
+/** Mission records from two devices: finished stays finished (earliest time), the best result wins, runs keep the larger count. */
+export function mergeQuests(a: Quests = {}, b: Quests = {}): Quests {
+  const out: Quests = { ...b };
+  for (const [id, x] of Object.entries(a)) {
+    const y = out[id];
+    if (!y) {
+      out[id] = x;
+      continue;
+    }
+    const min = (p?: number, q?: number) => (p === undefined ? q : q === undefined ? p : Math.min(p, q));
+    const ratio = (r?: { correct: number; total: number }) => (r && r.total ? r.correct / r.total : -1);
+    out[id] = {
+      version: Math.max(x.version, y.version),
+      startedAt: min(x.startedAt, y.startedAt),
+      completedAt: min(x.completedAt, y.completedAt),
+      best: ratio(x.best) >= ratio(y.best) ? (x.best ?? y.best) : y.best,
+      runs: Math.max(x.runs, y.runs),
+    };
+  }
+  return out;
 }
 
 function unionBy<T>(a: T[], b: T[], key: (x: T) => string | number): T[] {
@@ -103,6 +145,10 @@ export function mergeSynced(a: Synced, b: Synced | undefined, prefer?: 'a' | 'b'
     daily,
     ladderBest,
     checkpoints: byAt(unionBy(a.checkpoints ?? [], b.checkpoints ?? [], (x) => x.at)),
+    quests: mergeQuests(a.quests, b.quests),
+    grants: byAt(unionBy<Grant>(a.grants ?? [], b.grants ?? [], (x) => x.id)),
+    checks: byAt(unionBy<CheckRecord>(a.checks ?? [], b.checks ?? [], (x) => x.id)),
+    project: pick(a.project, b.project, () => (a.project?.at ?? 0) >= (b.project?.at ?? 0)),
   };
 }
 

@@ -284,6 +284,36 @@ const factorizeChoice: Template = {
   },
 };
 
+/**
+ * Factor Factory: split the number into factor pairs until every piece is prime.
+ * Any route works; every valid tree ends in the same primes.
+ */
+const factorizeTree: Template = {
+  id: 'pf.factorize/tree',
+  skillId: 'pf.factorize',
+  board: 'factor',
+  version: 1,
+  generate: ({ rng, level }) => {
+    let f = randomFactorization(rng, level, level <= 3 ? 120 : level <= 6 ? 2000 : 30000);
+    // Three or more prime pieces, so the tree has at least two splits.
+    for (let i = 0; i < 20 && f.reduce((n, [, e]) => n + e, 0) < 3; i++) f = randomFactorization(rng, level, level <= 3 ? 120 : level <= 6 ? 2000 : 30000);
+    const n = productOf(f);
+    const primes = f.flatMap(([q, e]) => Array.from({ length: e }, () => q));
+    const pair = (() => {
+      const d = primes.length > 1 ? primes[0] * (primes.length > 2 ? primes[1] : 1) : primes[0];
+      return `${d} × ${n / d}`;
+    })();
+    return {
+      prompt: `Split ${fmt(n)} into factors until every piece is prime.`,
+      ruleLens: FZ_LENS,
+      hints: [`Start with any factor pair you can see, like ${pair}.`, 'Keep splitting a piece until it has no factors except 1 and itself.'],
+      explanation: `${fmt(n)} = ${factorLabel(f)}. Any route works: every correct tree ends with the same primes.`,
+      payload: { kind: 'factor', n },
+      key: { kind: 'factor', primes },
+    };
+  },
+};
+
 const factorizeNumeric: Template = {
   id: 'pf.factorize/largest',
   skillId: 'pf.factorize',
@@ -684,6 +714,7 @@ export const PRIMES_TEMPLATES: Template[] = [
   primesRefute,
   primesTransfer,
   factorizeChoice,
+  factorizeTree,
   factorizeNumeric,
   factorizeZeros,
   divisorNumeric,

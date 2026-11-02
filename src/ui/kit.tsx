@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { DisplayStatus } from '../engine/types';
-import { color, font, MAX_WIDTH, radius, space, type } from './theme';
+import { color, depth, font, MAX_WIDTH, radius, space, type } from './theme';
 
 // ---------------------------------------------------------------- text
 
@@ -26,6 +26,9 @@ export const Label = (p: TextProps) => <Text {...p} style={[type.label, p.style]
 export const Body = (p: TextProps) => <Text {...p} style={[type.body, p.style]} />;
 export const Small = (p: TextProps) => <Text {...p} style={[type.small, p.style]} />;
 export const Micro = (p: TextProps) => <Text {...p} style={[type.micro, p.style]} />;
+
+/** A short teal label above a heading ("Your learning trail"). Sentence case, never all caps. */
+export const Eyebrow = (p: TextProps) => <Text {...p} style={[styles.eyebrow, p.style]} />;
 
 // ---------------------------------------------------------------- layout
 
@@ -71,11 +74,11 @@ export function BackLink({ label = 'Back' }: { label?: string }) {
   return (
     <Pressable
       accessibilityRole="link"
-      onPress={() => (router.canGoBack() ? router.back() : router.replace('/today'))}
+      onPress={() => (router.canGoBack() ? router.back() : router.replace('/play'))}
       style={({ pressed }) => [styles.back, pressed && { opacity: 0.6 }]}
       hitSlop={12}
     >
-      <Text style={[type.label, { color: color.cobalt }]}>‹ {label}</Text>
+      <Text style={[type.label, { color: color.action }]}>‹ {label}</Text>
     </Pressable>
   );
 }
@@ -124,24 +127,24 @@ export function Button({
 
 const buttonKinds: Record<ButtonKind, { box: ViewStyle; pressed: ViewStyle; text: TextStyle }> = {
   primary: {
-    box: { backgroundColor: color.cobalt, borderBottomWidth: 4, borderBottomColor: color.cobaltDeep },
+    box: { backgroundColor: color.action, borderBottomWidth: 4, borderBottomColor: color.actionDeep },
     pressed: { borderBottomWidth: 1, marginTop: 3 },
     text: { color: color.white },
   },
   secondary: {
-    box: { backgroundColor: color.surface, borderWidth: 1.5, borderColor: color.ink, borderBottomWidth: 4 },
+    box: { backgroundColor: color.surface, borderWidth: 1.5, borderColor: color.ruleStrong, borderBottomWidth: 4, borderBottomColor: depth.key },
     pressed: { borderBottomWidth: 1.5, marginTop: 2.5 },
     text: { color: color.ink },
   },
   quiet: {
     box: { backgroundColor: 'transparent', minHeight: 44 },
     pressed: { opacity: 0.6 },
-    text: { color: color.cobalt },
+    text: { color: color.action },
   },
   danger: {
-    box: { backgroundColor: color.surface, borderWidth: 1.5, borderColor: color.brick },
+    box: { backgroundColor: color.surface, borderWidth: 1.5, borderColor: color.wrong },
     pressed: { opacity: 0.7 },
-    text: { color: color.brick },
+    text: { color: color.wrong },
   },
 };
 
@@ -169,7 +172,7 @@ export function Chip({
       style={({ pressed }) => [styles.chip, selected && styles.chipOn, disabled && { opacity: 0.45 }, pressed && { opacity: 0.8 }]}
     >
       <Text style={[type.label, { color: selected ? color.white : color.ink }]}>{label}</Text>
-      {note ? <Text style={[type.micro, { color: selected ? color.cobaltWash : color.inkFaint }]}>{note}</Text> : null}
+      {note ? <Text style={[type.micro, { color: selected ? color.actionWash : color.inkFaint }]}>{note}</Text> : null}
     </Pressable>
   );
 }
@@ -210,9 +213,9 @@ export function OptionRow({
 const STAMP: Record<DisplayStatus, { label: string; fg: string; bg: string; border: string }> = {
   new: { label: 'New', fg: color.inkFaint, bg: 'transparent', border: color.rule },
   learning: { label: 'Learning', fg: color.inkSoft, bg: color.paperDeep, border: color.paperDeep },
-  practicing: { label: 'Practicing', fg: color.cobaltDeep, bg: color.cobaltWash, border: color.cobaltWash },
-  review: { label: 'Review due', fg: color.brass, bg: color.brassWash, border: color.brassBright },
-  secure: { label: 'Secure', fg: color.white, bg: color.brass, border: color.brass },
+  practicing: { label: 'Practicing', fg: color.actionDeep, bg: color.actionWash, border: color.actionWash },
+  review: { label: 'Review due', fg: color.gold, bg: color.goldWash, border: color.goldBright },
+  secure: { label: 'Secure', fg: color.white, bg: color.gold, border: color.gold },
 };
 
 export function Stamp({ status }: { status: DisplayStatus }) {
@@ -256,15 +259,30 @@ export function LinkRow({
   );
 }
 
-/** A plate: the one raised surface, used sparingly for the primary block on a screen. */
-export function Plate({ children, style, tone = 'surface' }: { children: ReactNode; style?: StyleProp<ViewStyle>; tone?: 'surface' | 'brass' | 'cobalt' }) {
-  const toneStyle =
-    tone === 'brass'
-      ? { backgroundColor: color.brassWash, borderColor: color.brassBright }
-      : tone === 'cobalt'
-        ? { backgroundColor: color.cobaltWash, borderColor: color.cobaltWash }
-        : null;
-  return <View style={[styles.plate, toneStyle, style]}>{children}</View>;
+export type PlateTone = 'surface' | 'warm' | 'action' | 'growth';
+
+const PLATE_TONES: Record<PlateTone, ViewStyle | null> = {
+  surface: null,
+  warm: { backgroundColor: color.goldWash, borderColor: color.goldWash, borderBottomColor: '#E8D3AA' },
+  action: { backgroundColor: color.actionWash, borderColor: color.actionWash, borderBottomColor: '#C9E0DA' },
+  growth: { backgroundColor: color.growth, borderColor: color.growth, borderBottomColor: '#D2E1D3' },
+};
+
+/** A card: white (or a soft tone) with rounded corners and a warm depth edge. */
+export function Plate({ children, style, tone = 'surface' }: { children: ReactNode; style?: StyleProp<ViewStyle>; tone?: PlateTone }) {
+  return <View style={[styles.plate, PLATE_TONES[tone], style]}>{children}</View>;
+}
+
+/** Workshop Coins, as shown in headers and rewards. */
+export function CoinBadge({ count, style }: { count: number; style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[styles.coin, style]} accessibilityLabel={`${count} Workshop Coins`}>
+      <View style={styles.coinDot}>
+        <Text style={styles.coinMark}>$</Text>
+      </View>
+      <Text style={[type.label, { fontFamily: font.num }]}>{count}</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -288,7 +306,7 @@ const styles = StyleSheet.create({
     backgroundColor: color.surface,
     justifyContent: 'center',
   },
-  chipOn: { backgroundColor: color.cobalt, borderColor: color.cobalt },
+  chipOn: { backgroundColor: color.action, borderColor: color.action },
   option: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -301,9 +319,9 @@ const styles = StyleSheet.create({
     borderColor: color.rule,
     backgroundColor: color.surface,
   },
-  optionOn: { borderColor: color.cobalt, backgroundColor: color.cobaltWash },
+  optionOn: { borderColor: color.action, backgroundColor: color.actionWash },
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: color.ruleStrong },
-  radioOn: { borderColor: color.cobalt, borderWidth: 6 },
+  radioOn: { borderColor: color.action, borderWidth: 6 },
   stamp: { borderWidth: 1.5, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
   stampText: { fontFamily: font.label, fontSize: 12.5, letterSpacing: 0.1 },
   linkRow: {
@@ -319,9 +337,27 @@ const styles = StyleSheet.create({
   plate: {
     backgroundColor: color.surface,
     borderRadius: radius.lg,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: color.rule,
+    borderBottomWidth: 4,
+    borderBottomColor: depth.card,
     padding: space.lg + 2,
     gap: space.sm,
   },
+  eyebrow: { fontFamily: font.label, fontSize: 13, lineHeight: 17, color: color.action, letterSpacing: 0.2 },
+  coin: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: color.surface,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: color.rule,
+    paddingVertical: 5,
+    paddingLeft: 6,
+    paddingRight: 12,
+    alignSelf: 'flex-start',
+  },
+  coinDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: color.goldBright, alignItems: 'center', justifyContent: 'center' },
+  coinMark: { fontFamily: font.num, fontSize: 12, lineHeight: 14, color: color.gold },
 });

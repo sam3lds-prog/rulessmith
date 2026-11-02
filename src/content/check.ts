@@ -80,7 +80,29 @@ export function checkItem(item: Item, response: Response): CheckResult {
       if (value === null) return { correct: false, feedback: 'Enter a whole number.' };
       return { correct: value === evalValue(p.spec) };
     }
+    case 'factor': {
+      const solutions = [primeFactorsBrute(p.n).join(' × ')];
+      if (response.kind !== 'factor' || response.primes.length === 0) return { correct: false, solutions };
+      const product = response.primes.reduce((acc, q) => acc * BigInt(q), 1n);
+      const allPrime = response.primes.every((q) => Number.isInteger(q) && isPrimeBrute(BigInt(q)));
+      const feedback = !allPrime ? 'Some pieces can still be split.' : product !== BigInt(p.n) ? `Those primes multiply to ${product}, not ${p.n}.` : undefined;
+      return { correct: allPrime && product === BigInt(p.n), solutions, feedback };
+    }
+    case 'rail': {
+      if (response.kind !== 'rail') return { correct: false };
+      const stop = p.stops[response.stop];
+      return { correct: stop !== undefined && BigInt(stop.value) === evalValue(p.spec) };
+    }
   }
+}
+
+/** Prime factors of n with repetition, smallest first, by trial division. */
+export function primeFactorsBrute(n: number): number[] {
+  const out: number[] = [];
+  let m = n;
+  for (let q = 2; q * q <= m; q++) while (m % q === 0) (out.push(q), (m /= q));
+  if (m > 1) out.push(m);
+  return out;
 }
 
 /** The correct answer, computed independently, in display form. */
@@ -104,5 +126,11 @@ export function correctAnswerText(item: Item): string {
     }
     case 'sort':
       return p.numbers.filter((n) => evalPred(BigInt(n), p.p)).join(', ');
+    case 'factor':
+      return primeFactorsBrute(p.n).join(' × ');
+    case 'rail': {
+      const v = evalValue(p.spec);
+      return p.stops.find((s) => BigInt(s.value) === v)?.label ?? v.toString();
+    }
   }
 }

@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { SKILLS, TRACKS } from '../content';
 import { maxLevelFor, ownsChallenge } from '../monetization/entitlements';
 import { useApp } from '../state/store';
+import { useStart } from '../ui/useStart';
 import { BackLink, Body, Button, Chip, Gap, Heading, OptionRow, Plate, Screen, Small, Title } from '../ui/kit';
 import { color, space } from '../ui/theme';
 
@@ -19,6 +20,7 @@ export default function Challenge() {
   const [picked, setPicked] = useState<string[]>([]);
   const [range, setRange] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const { start: startWith, sheet } = useStart();
   const now = Date.now();
   const challenge = ownsChallenge(s.entitlements, now);
 
@@ -29,14 +31,17 @@ export default function Challenge() {
   };
 
   const start = () => {
-    const r = s.startSession('challenge', { skills: picked, levels: RANGES[range].levels });
-    if (r.ok) router.push('/session');
-    else setError(r.reason === 'locked' ? 'That difficulty is part of Premium or the Hardest Levels Challenge pack.' : 'Pick at least one skill.');
+    startWith(
+      () => s.startSession('challenge', { skills: picked, levels: RANGES[range].levels }),
+      (r) => {
+        if (!r.ok) setError(r.reason === 'locked' ? 'That difficulty is part of Premium or the Hardest Levels Challenge pack.' : r.reason === 'no-runs' ? "You've used today's free runs." : 'Pick at least one skill.');
+      },
+    );
   };
 
   return (
     <Screen footer={<Button title="Start a 10-puzzle run" onPress={start} disabled={picked.length === 0 || !allowed(range)} />}>
-      <BackLink label="Topics" />
+      <BackLink />
       <Title>Challenge builder</Title>
       <Gap h={space.sm} />
       <Body>Pick the skills and the difficulty. Every puzzle is generated fresh, so you can run this as often as you like.</Body>
@@ -65,12 +70,13 @@ export default function Challenge() {
         ))}
       </View>
       {!allowed(range) ? (
-        <Plate tone="brass" style={{ marginTop: space.md }}>
+        <Plate tone="warm" style={{ marginTop: space.md }}>
           <Small style={{ color: color.ink }}>This difficulty is locked for the skills you picked.</Small>
           <Button title="See Premium and packs" kind="secondary" onPress={() => router.push('/premium')} />
         </Plate>
       ) : null}
-      {error ? <Small style={{ marginTop: space.sm, color: color.brick }}>{error}</Small> : null}
+      {error ? <Small style={{ marginTop: space.sm, color: color.wrong }}>{error}</Small> : null}
+      {sheet}
     </Screen>
   );
 }

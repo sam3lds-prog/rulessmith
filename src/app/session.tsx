@@ -3,6 +3,9 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ItemScreen } from '../boards/ItemScreen';
 import { LADDER_MISSES } from '../engine/mixer';
+import { gameForItem } from '../games/registry';
+import { CHAPTER_BY_ID, MISSION_BY_ID } from '../quests/chapters';
+import { DISTRICT_BY_ID } from '../world/catalog';
 import { useApp } from '../state/store';
 import { Micro } from '../ui/kit';
 import { color, space, type } from '../ui/theme';
@@ -44,12 +47,12 @@ export default function Session() {
         router.replace('/recap');
       } else {
         abandon();
-        router.replace('/today');
+        router.replace('/play');
       }
     }
   }, [active?.id, active?.index, slotKey, flagsVersion]);
 
-  if (!active) return <Redirect href="/today" />;
+  if (!active) return <Redirect href="/play" />;
   // Being replaced (switched off or changed since it was made): the effect above swaps it in a moment.
   if (!item || !slot) return null;
 
@@ -60,13 +63,15 @@ export default function Session() {
 
   const end = () => {
     if (active.results.length > 0) {
-      // Ending a ladder at its third miss is a normal finish; anything else stopped early.
-      const early = !(ladder && ladder.misses >= LADDER_MISSES);
+      // A normal finish: a ladder ended at its third miss, or every puzzle answered (End tapped
+      // instead of "See my results"). Anything else stopped early.
+      const allAnswered = total !== undefined && active.results.length >= total;
+      const early = !(ladder && ladder.misses >= LADDER_MISSES) && !allAnswered;
       finish({ early });
       router.replace('/recap');
     } else {
       abandon();
-      router.replace('/today');
+      router.replace('/play');
     }
   };
 
@@ -74,7 +79,7 @@ export default function Session() {
     <View style={{ gap: space.sm, marginBottom: space.xs }}>
       <View style={styles.headRow}>
         <Pressable accessibilityRole="button" onPress={end} hitSlop={12} style={styles.end}>
-          <Text style={[type.label, { color: color.cobalt }]}>End</Text>
+          <Text style={[type.label, { color: color.action }]}>End</Text>
         </Pressable>
         <Micro>
           {active.title}
@@ -86,26 +91,35 @@ export default function Session() {
         <View style={styles.track} accessibilityLabel={`Puzzle ${position} of ${total}`}>
           {Array.from({ length: total }, (_, i) => {
             const r = active.results[i];
-            return (
-              <View
-                key={i}
-                style={[
-                  styles.seg,
-                  r ? { backgroundColor: r.correct ? color.verdigris : color.brick } : i === active.index ? { backgroundColor: color.cobalt } : null,
-                ]}
-              />
-            );
+            // In a check the bar shows progress only: answered, current, to come. Never right or wrong.
+            const done = r ? (active.feedback === 'after-set' ? { backgroundColor: color.actionDeep } : { backgroundColor: r.correct ? color.right : color.wrong }) : null;
+            return <View key={i} style={[styles.seg, done ?? (i === active.index ? { backgroundColor: color.action } : null)]} />;
           })}
         </View>
       ) : null}
     </View>
   );
 
+  const mission = active.missionId ? MISSION_BY_ID[active.missionId] : undefined;
+  const district = mission ? DISTRICT_BY_ID[CHAPTER_BY_ID[mission.chapterId]?.districtId] : undefined;
+  const isCheck = active.feedback === 'after-set' || active.quiz === 'recall';
+  const game = isCheck ? null : gameForItem(item);
+  const eyebrow = isCheck
+    ? 'Check what you know'
+    : mission && district
+      ? `${district.name} · ${mission.support === 'guided' ? 'learn through play' : 'on your own'}`
+      : game
+        ? 'Practice'
+        : undefined;
+
   return (
     <ItemScreen
       key={`${active.id}:${active.index}:${item.id}`}
       item={item}
       support={slot.support}
+      game={game}
+      eyebrow={eyebrow}
+      feedback={active.feedback}
       header={header}
       timed={active.timed}
       initialProgress={active.progress}
@@ -116,7 +130,7 @@ export default function Session() {
         recordAnswer(item, a);
       }}
       onReport={(reason) => report(item, reason)}
-      continueLabel={isLast ? 'See recap' : 'Next'}
+      continueLabel={isLast ? (active.feedback === 'after-set' ? 'See my results' : 'See recap') : 'Next'}
       onContinue={() => {
         answered.current = false;
         const { done } = advance();

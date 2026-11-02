@@ -3,11 +3,11 @@
 ## Shape of the system
 
 ```
- ┌────────────── app (Expo Router screens, src/app) ──────────────┐
+ ┌──────────────── app (Expo Router screens, src/app) ────────────────┐
  │ welcome → onboarding/about → onboarding/placement → onboarding/plan │
- │ (tabs): today · topics · progress · you                         │
- │ session → recap        daily        premium   skill/[id]  challenge │
- └──────────────┬──────────────────────────────────────────────────┘
+ │ (tabs): play · plan · practice · workshop      you (header button)  │
+ │ mission/[id] → session → recap   daily  premium  skill/[id]  challenge │
+ └──────────────┬──────────────────────────────────────────────────────┘
                 │ reads/writes
         ┌───────▼────────┐        optional        ┌──────────────┐
         │ state/store.ts │ ── outbox + merge ────▶ │  Supabase    │
@@ -16,14 +16,14 @@
         └──┬─────┬────┬──┘                         └──────────────┘
            │     │    │
    engine/ │     │ content/            monetization/ + policy/
-   rating  │     │ templates           products, entitlements, tokens,
+   rating  │     │ templates           products, entitlements, coins,
    mastery │     │ generators          age bands, ad rules
    mixer   │     │ checker (brute force)
-   planner │     │ audit
-   placement     │
+   planner │     │ audit               the workshop layer:
+   placement     │                     games/ quests/ quizzes/ rewards/
+                                       world/ exams/ feel/events
 ```
-
-Everything below the store is pure TypeScript and unit-tested in Node. So are `state/types.ts`, `state/migrate.ts`, `state/buckets.ts` and `sync/*`; the store itself is tested end to end with React Native, storage and Supabase faked (`state/store.test.ts`).
+Everything below the store is pure TypeScript and unit-tested in Node, except `feel/director.ts` (sound and haptics on the device). So are `state/types.ts`, `state/migrate.ts`, `state/buckets.ts` and `sync/*`; the store itself is tested end to end with React Native, storage and Supabase faked (`state/store.test.ts`).
 
 ## The learning engine (`src/engine`)
 
@@ -57,13 +57,13 @@ Details of the content workflow are in `CONTENT.md`.
 
 Local-first. One zustand store (`store.ts`) holds the open learner's data (`types.ts` `Data`): profile, plan, skill states, the attempt log, the outbox, ledgers, the active session and the puzzle in progress, placement in progress, daily results, reports and account.
 
-**One bucket per learner** (`buckets.ts`). The guest on this device and each signed-in account are saved under separate keys; `rulesmith:owner` says which is open. Signing out closes the account's bucket and opens the guest's, so the previous learner never stays on screen; signing in does the reverse. Only device-level keys (`runs`, `entitlements`, `settings`) cross over. A guest's progress joins an account only when the learner chooses "Add it to my account" at sign-in (`sync/merge.ts` `importGuest`); the guest bucket is then emptied so it can't be imported twice. Saves are coalesced (300 ms), flushed at once when a hint is taken or a rule revealed, when the app goes to the background, and before any switch. The attempt log and its outbox are one write, made before the rest; if it fails nothing else is written, the learner sees a notice on Today, and the save is retried. If the app stops between the two writes, launch notices the skills are behind the log and rebuilds them.
+**One bucket per learner** (`buckets.ts`). The guest on this device and each signed-in account are saved under separate keys; `rulesmith:owner` says which is open. Signing out closes the account's bucket and opens the guest's, so the previous learner never stays on screen; signing in does the reverse. Only device-level keys (`runs`, `entitlements`, `settings`) cross over. A guest's progress joins an account only when the learner chooses "Add it to my account" at sign-in (`sync/merge.ts` `importGuest`); the guest bucket is then emptied so it can't be imported twice. Saves are coalesced (300 ms), flushed at once when a hint is taken or a rule revealed, when the app goes to the background, and before any switch. The attempt log and its outbox are one write, made before the rest; if it fails nothing else is written, the learner sees a notice on Play, and the save is retried. If the app stops between the two writes, launch notices the skills are behind the log and rebuilds them.
 
 **The attempt log is the learning record.** Each graded answer is an `Attempt` with a stable id, the response, the misconception from the checker, the template and content versions, support mode, hints, whether the rule was shown, first-seen time and active (foreground) time. It is not capped. Skill states are updated live from each attempt and can be rebuilt by replaying the log (`rebuildSkills`), which gives exactly the live result.
 
 **Nothing is lost on interruption.** The puzzle on screen saves its board draft, hints, a revealed rule, first-seen time and active time as the learner works (`ItemProgress`: in the active session, the placement check and the daily puzzle). After a refresh, background or force-close it comes back exactly as it was, so a hint opened before the crash is still a hint. A slot is graded once; a resumed, answered slot is skipped.
 
-**Migrations** (`migrate.ts`). v1 saved everything under `rulesmith-v1`. At first launch it moves into the right bucket. Answers at levels 1 to 4, where v1 showed the rule openly, become guided; a Secure status that rested on them goes back to Practicing. v1 capped its log and wrote placement ratings straight onto skills, so the migrated skill states become a **baseline**: rebuilds start from it and replay only the attempts it doesn't cover, so old progress is never erased.
+**Migrations** (`migrate.ts`, `STATE_VERSION` 3). v3 adds chapter missions (`quests`), workshop objects (`grants`), check results (`checks`), the chosen project and the feel settings; older saves get empty ones, and an open session from v2 keeps immediate feedback. v1 saved everything under `rulesmith-v1`. At first launch it moves into the right bucket. Answers at levels 1 to 4, where v1 showed the rule openly, become guided; a Secure status that rested on them goes back to Practicing. v1 capped its log and wrote placement ratings straight onto skills, so the migrated skill states become a **baseline**: rebuilds start from it and replay only the attempts it doesn't cover, so old progress is never erased.
 
 ## Sync (`src/sync`, `src/data/cloud.ts`)
 
@@ -75,7 +75,7 @@ Each sync (after a session, a daily puzzle, at launch and on returning to the fo
 
 1. Checks the saved Supabase session belongs to the open bucket's account; if not, it stops and asks the learner to sign in again.
 2. Pulls the snapshot (`learner_state`) and attempts received since the last pull (`received_at`, stamped by the server, with a 10-minute overlap so a late commit is never skipped).
-3. Merges by id (`mergeRemote`): attempts are a union; tokens and sessions are ledgers (balance, session count and streak are recomputed from them); daily results, checkpoints and placement runs merge by key; ladder bests keep the maximum; profile and plan keep the newer copy. If attempts arrived from elsewhere, skills are rebuilt from the whole log. No side "wins" by having more puzzles.
+3. Merges by id (`mergeRemote`): attempts are a union; tokens and sessions are ledgers (balance, session count and streak are recomputed from them); daily results, checkpoints and placement runs merge by key; ladder bests keep the maximum; workshop objects and check results are a union by id; a mission keeps its earliest completion and best score; profile, plan and the chosen project keep the newer copy. If attempts arrived from elsewhere, skills are rebuilt from the whole log. No side "wins" by having more puzzles.
 4. Uploads the outbox (attempts and reports not yet acknowledged). Ids leave the outbox only after the server has them; anything answered during the upload stays for next time. Uploads are idempotent (`on conflict do nothing`).
 5. Pushes the merged snapshot back with compare-and-set on `learner_state.version`: if another device stored its snapshot since the pull, it pulls, merges and retries (up to three times).
 
@@ -93,7 +93,7 @@ The `disabled_templates` table lists switched-off template ids. The app reads it
 
 | Table | Written by | Purpose |
 | --- | --- | --- |
-| `learner_state` | the app | Snapshot of profile, plan and ledgers (`v: 2`), merged before every push |
+| `learner_state` | the app | Snapshot of profile, plan, ledgers, missions, workshop objects and check results (`v: 3`), merged before every push. A trigger refuses an update that lowers `v`, so an older app can't drop newer keys |
 | `attempts` | the app | The learning record: every answer with its response, versions and support, keyed by `(user_id, attempt_id)`; `received_at` is the pull cursor |
 | `content_reports` | the app | "Report a problem", keyed by `(user_id, report_id)`, with item id and content version |
 | `events` | the app, via `log_events()` only | Analytics. The app can't read it |
@@ -107,10 +107,30 @@ Row-level security on every table: learners reach only their own rows. `supabase
 
 ## Monetization and policy
 
-`monetization/` holds the product catalog (matching the plan's price ladder), entitlement rules and tokens. `policy/` holds age-band rules and ad placement rules. Both are pure functions with tests in `monetization/monetization.test.ts`. The app talks to purchases only through `PurchaseProvider` (`monetization/purchases.ts`); the test provider is in use until RevenueCat is wired. See `MONETIZATION.md`.
+`monetization/` holds the product catalog (matching the plan's price ladder), entitlement rules and Workshop Coins (`tokens.ts`; the code still calls them tokens). `policy/` holds age-band rules and ad placement rules. Both are pure functions with tests in `monetization/monetization.test.ts`. The app talks to purchases only through `PurchaseProvider` (`monetization/purchases.ts`); the test provider is in use until RevenueCat is wired. See `MONETIZATION.md`.
+
+## The workshop layer
+
+The redesign from the *Illustrated Game and Learning Guide* wraps the learning engine in a world. Every part is pure TypeScript and tested in `world/workshop.test.ts` and `state/store.test.ts`. None of it is read by the mastery rules: cosmetic progress and concept mastery stay separate.
+
+| Module | What it holds |
+| --- | --- |
+| `games/registry.ts` | The five game skins and which board each one wraps: Number Gates (sort), Number Forge (construct), Rule Breaker (refute), Factor Factory (factor) and Remainder Rails (rail). Choice and numeric items are "quick questions". A skin changes the frame, labels and guided note, never the item or how it is graded. |
+| `quests/chapters.ts` | Chapters and missions. "Light the Gatehouse" has six: three games, a concept check, a transfer mission and a recall a day after the check. Factor Foundry and Clockwork Harbor have a game and a check each. A mission's steps name templates and levels, so its puzzles are generated and checked like any other. A mission completes only when every slot is answered and the session wasn't ended early. |
+| `quizzes/policies.ts` | Concept check (5 items, independent, results at the end), mixed exam drill (12, uses a run), recall (3), repair (3, guided). Checks avoid families played in missions or repairs in the last day (where possible), mix board types and include a transfer item. `summarizeCheck` gives what you can do, what needs one more look (with misconception notes) and what to play next. |
+| `rewards/ledger.ts` | Workshop objects are grants with stable ids (`item:<id>`), so a reward is given once however often a recap, reload or sync replays it. Buying spends coins once (`buy:<id>`). The weekly goal is 4 learning days in a Monday-to-Sunday week; it pays 10 coins once per week (`weekly:<monday>`). Rewards are settled after a session, a daily puzzle, a sync and at launch, so a week finished by a daily puzzle or on another device still pays. Known limit: two offline devices can each buy an object with the same coins; after they sync the balance can dip below zero (shown as 0) until new coins cover it. |
+| `world/catalog.ts` | Districts (three released, five planned) and the 18 workshop objects with how each is earned. Versioned. |
+| `exams/blueprints.ts` | Each exam's official math domains with a source link and the date it was checked, which domains the app covers (foundations, planned, not covered) and an honest coverage line ("X of N released skills secure"). Not a score prediction. |
+| `feel/events.ts`, `feel/director.ts` | One table of feedback events (select, place, submit, correct, incorrect, mission complete, project reveal, recall success) with their sound, haptic and visual length. The director plays them, respecting the learner's sound, vibration, reduce-motion and Focus settings and the phone's silent switch. |
+
+**A session with answers is never replaced.** Starting a mission, check or session while one with answers is open is refused (`in-progress`); the screens ask to resume it or end it first (`ui/useStart.tsx`).
+
+**Checks never leak the answer early.** In a check (`feedback: 'after-set'`) a board gets no result until the set is over: no verdict text, no right or wrong colours, a neutral progress bar, a companion that stays curious, and only the neutral submit sound. The end-of-check screen then shows every answer with its explanation.
 
 ## UI
 
-The item screen shows which mode a puzzle is in ("Practice with the rule" or "On your own"); on independent puzzles the rule sits behind "Show the rule (counts as a hint)".
+Four tabs: **Play** (the learning trail, the next discovery, weekly goal, project, daily puzzle, recall and the plan session), **Plan** (exam map with honest coverage, the exam's official outline and the weekly plan), **Practice** (concept checks, repairs, mixed drill, chapters and free play) and **Workshop** (the scene, the collection, coin purchases, the current project and knowledge seals for Secure skills). Settings and account open from the header.
 
-Tokens in `ui/theme.ts`: cool grey-green paper, graphite ink, cobalt for actions, brass for proof of mastery, verdigris and brick for right and wrong. Archivo for headings, Atkinson Hyperlegible for body and numerals (chosen for unambiguous digits). The number tile (`boards/Tile.tsx`) is a keycap that sinks when pressed; it is the one bold element. Every board is tap-only.
+The item screen shows which mode a puzzle is in ("Practice with the rule" or "On your own"); on independent puzzles the rule sits behind "Show the rule (counts as a hint)". Game skins add a title, eyebrow and a submit label that says what happens ("Check my routes", "Test your number").
+
+Tokens in `ui/theme.ts`: warm paper, deep green-ink text, a teal action colour, gold for proof of mastery, green and brick for right and wrong; every text pair passes 4.5:1. Fredoka for headings, Nunito Sans for text, Atkinson Hyperlegible for every number (chosen for unambiguous digits). The workshop scene and companion are original vector art (`ui/WorkshopScene.tsx`, `ui/Companion.tsx`); ambient motion stops with reduced motion or Focus. The number tile (`boards/Tile.tsx`) is a keycap that sinks when pressed. Every board is tap-only.
