@@ -1,6 +1,6 @@
 # Working in this repo
 
-Rulesmith (repo `mathwhiz`): an Expo SDK 58 + TypeScript puzzle app for learning math rules. iOS, Android and web from one codebase. Read `AGENTS.md` for Expo-specific rules (it came with the Expo template), and `docs/ARCHITECTURE.md` before changing the engine or content.
+Rulesmith (repo `sam3lds-prog/rulessmith`, formerly `mathwhiz`): an Expo SDK 58 + TypeScript puzzle app for learning math rules. iOS, Android and web from one codebase. Read `AGENTS.md` for Expo-specific rules (it came with the Expo template), and `docs/ARCHITECTURE.md` before changing the engine or content.
 
 ## Commands
 
