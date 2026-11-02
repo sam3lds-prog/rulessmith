@@ -46,7 +46,12 @@ import type { Attempt, DisplayStatus, JourneyPlan, Profile, SessionMode, Slot } 
 import { grant, isPremium, maxLevelFor, ownsChallenge, runsAreUnlimited, runsLeftToday } from '../monetization/entitlements';
 import { createTestProvider } from '../monetization/purchases';
 import { TOKEN_COSTS, TOKEN_REWARDS } from '../monetization/tokens';
+import { examSkills } from '../exams/blueprints';
+import { MISSION_BY_ID, missionSlots, missionState, missionsDone } from '../quests/chapters';
+import { drillSlots, heldOutSlots, POLICIES, repairSlots, summarizeCheck, type QuizKind } from '../quizzes/policies';
+import { buy, grantOnce, milestoneGrants, weeklyProgress, weeklyRewardEntry } from '../rewards/ledger';
 import { applyPlacementRun, derived, importGuest, mergeRemote, pickSynced, type Synced } from '../sync/merge';
+import { itemForMission } from '../world/catalog';
 import { clearBucket, createSaver, GUEST, openAtLaunch, OWNER_KEY, readBucket, writeBucket, type KV } from './buckets';
 import { migrateSnapshot } from './migrate';
 import {
@@ -56,7 +61,9 @@ import {
   pickData,
   type ActiveSession,
   type AnswerRecord,
+  type CheckRecord,
   type Data,
+  type FeelSettings,
   type ItemProgress,
   type Recap,
   type SessionResult,
@@ -97,6 +104,13 @@ interface Actions {
   finishPlacement(skipped: boolean): void;
 
   startSession(mode: SessionMode, opts?: { skillId?: string; skills?: string[]; levels?: [number, number] }): StartResult;
+  /** Play a chapter mission. Missions never use a free run: the chapters are free. */
+  startMission(missionId: string): StartResult;
+  /**
+   * A quiz: a concept check on `skills`, a mixed drill for the learner's exam, a
+   * guided repair of `skillId`, or a recall set on due skills.
+   */
+  startQuiz(kind: Exclude<QuizKind, 'practice'>, opts?: { skills?: string[]; skillId?: string }): StartResult;
   currentItem(): Item | undefined;
   /** Replace the current puzzle if it was switched off or its template changed. */
   ensureServable(): ServeStatus;
@@ -116,6 +130,12 @@ interface Actions {
   grantRewardedRun(): void;
   purchase(productId: string): Promise<{ ok: boolean; error?: string }>;
   restorePurchases(): Promise<{ ok: boolean }>;
+
+  /** Buy a workshop object with Workshop Coins. */
+  buyItem(itemId: string): boolean;
+  /** The object the learner is working toward (shown on Play and Workshop). */
+  chooseProject(itemId: string | undefined): void;
+  setFeel(patch: Partial<FeelSettings>): void;
 
   report(item: Item, reason: string): void;
   setPreviewAds(on: boolean): void;
@@ -284,6 +304,91 @@ export const useApp = create<AppState>()((set, get) => {
     const run = { at: Date.now(), ratings };
     set({ placementRuns: [...s.placementRuns, run], skills: applyPlacementRun(s.skills, s.attempts, run), placement: undefined });
     get().createPlan();
+  };
+
+  // -------------------------------------------------------------- missions and quizzes
+
+  /** Families the learner played in the last day of chapter games, so a check can hold them out. */
+  const recentlyPlayedFamilies = () => {
+    const since = Date.now() - 86400000;
+    return [...new Set(get().attempts.filter((x) => x.at > since && (x.mode === 'quest' || x.mode === 'repair')).map((x) => x.templateId))];
+  };
+
+  const begin = (args: {
+    mode: SessionMode;
+    title: string;
+    slots: Slot[];
+    missionId?: string;
+    quiz?: QuizKind;
+    countsAsRun?: boolean;
+    timed?: boolean;
+  }): StartResult => {
+    const s = get();
+    const now = Date.now();
+    if (!s.profile) return { ok: false, reason: 'no-profile' };
+    if (args.slots.length === 0) return { ok: false, reason: 'empty' };
+    const runs = freshRuns(s.runs, now);
+    const tracks = [...new Set(args.slots.map((x) => SKILL_BY_ID[x.skillId]?.track))].filter(Boolean) as TrackId[];
+    const counted = Boolean(args.countsAsRun) && !runsAreUnlimited(tracks, s.entitlements, now);
+    if (counted && runsLeftToday(runs.used, runs.bonus) <= 0) {
+      set({ runs });
+      track('runs_exhausted', { mode: args.mode });
+      return { ok: false, reason: 'no-runs' };
+    }
+    const policy = args.quiz ? POLICIES[args.quiz] : undefined;
+    const active: ActiveSession = {
+      id: newId(),
+      mode: args.mode,
+      title: args.title,
+      slots: args.slots,
+      index: 0,
+      results: [],
+      startedAt: now,
+      countsAsRun: counted,
+      timed: Boolean(args.timed),
+      missionId: args.missionId,
+      quiz: args.quiz,
+      feedback: policy?.feedback ?? 'immediate',
+    };
+    const quests = args.missionId
+      ? {
+          ...s.quests,
+          [args.missionId]: {
+            ...s.quests[args.missionId],
+            version: s.quests[args.missionId]?.version ?? MISSION_BY_ID[args.missionId].version,
+            runs: s.quests[args.missionId]?.runs ?? 0,
+            startedAt: s.quests[args.missionId]?.startedAt ?? now,
+          },
+        }
+      : s.quests;
+    set({ active, quests, runs: counted ? { ...runs, used: runs.used + 1 } : runs });
+    track(args.missionId ? 'quest_started' : args.quiz ? 'quiz_started' : 'session_started', { mode: args.mode, mission: args.missionId, quiz: args.quiz, items: args.slots.length });
+    return { ok: true };
+  };
+
+  /** Days with any answered puzzle, for the weekly goal. */
+  const activityDays = () => new Set(get().attempts.map((x) => dayKey(x.at)));
+
+  /** Grants and coins that follow from what the learner has done: mission objects, milestones, the weekly goal. Each pays once. */
+  const settleRewards = (now: number) => {
+    const s = get();
+    let grants = s.grants;
+    let tokenLedger = s.tokenLedger;
+    const week = weeklyProgress(activityDays(), now);
+    if (week.met && !tokenLedger.some((e) => e.id === `weekly:${week.week}`)) tokenLedger = [...tokenLedger, weeklyRewardEntry(week.week, now)];
+    const weeksMet = tokenLedger.filter((e) => e.reason === 'weekly').length;
+    for (const [id, rec] of Object.entries(s.quests)) {
+      const item = rec.completedAt ? itemForMission(id) : undefined;
+      if (item) grants = grantOnce(grants, item.id, `mission:${id}`, rec.completedAt!);
+    }
+    grants = milestoneGrants(grants, missionsDone(s.quests), weeksMet, now);
+    const newItems = grants.filter((g) => !s.grants.some((x) => x.id === g.id)).map((g) => g.itemId);
+    const coins = tokenLedger.filter((e) => !s.tokenLedger.some((x) => x.id === e.id)).reduce((n, e) => n + e.delta, 0);
+    if (grants !== s.grants || tokenLedger !== s.tokenLedger) {
+      set({ grants, tokenLedger, ...derived({ tokenLedger, sessionLog: s.sessionLog, daily: s.daily }) });
+      for (const itemId of newItems) track('project_revealed', { item: itemId });
+    }
+    return { newItems, coins };
   };
 
   // -------------------------------------------------------------- buckets
@@ -547,10 +652,69 @@ export const useApp = create<AppState>()((set, get) => {
         timed: Boolean(s.profile?.style.timed) && mode === 'challenge',
         ladder,
         challenge,
+        feedback: 'immediate',
       };
       set({ active, runs: counted ? { ...runs, used: runs.used + 1 } : runs });
       track('session_started', { mode, items: slots.length, guided: slots.filter((x) => x.support === 'guided').length });
       return { ok: true };
+    },
+
+    startMission: (missionId) => {
+      const s = get();
+      const m = MISSION_BY_ID[missionId];
+      if (!m) return { ok: false, reason: 'empty' };
+      if (missionState(m, s.quests, Date.now()).status === 'waiting') return { ok: false, reason: 'locked' };
+      let slots: Slot[];
+      if (m.kind === 'check' || m.kind === 'recall') {
+        slots = heldOutSlots({
+          ...pick(),
+          skills: m.skills,
+          states: s.skills,
+          length: m.length ?? POLICIES[m.kind === 'check' ? 'check' : 'recall'].length,
+          avoid: recentlyPlayedFamilies(),
+          reason: m.kind === 'check' ? 'check' : 'recall',
+        });
+      } else {
+        slots = missionSlots(m, pick());
+      }
+      return begin({
+        mode: m.kind === 'check' ? 'check' : 'quest',
+        title: m.title,
+        slots,
+        missionId,
+        quiz: m.kind === 'check' ? 'check' : m.kind === 'recall' ? 'recall' : undefined,
+        countsAsRun: false,
+      });
+    },
+
+    startQuiz: (kind, opts = {}) => {
+      const s = get();
+      const policy = POLICIES[kind];
+      switch (kind) {
+        case 'check': {
+          const skills = opts.skills?.length ? opts.skills : todaysTargets(s.plan, s.skills, Date.now());
+          const slots = heldOutSlots({ ...pick(), skills, states: s.skills, length: policy.length, avoid: recentlyPlayedFamilies(), reason: 'check' });
+          return begin({ mode: 'check', title: policy.title, slots, quiz: 'check' });
+        }
+        case 'drill': {
+          const exams = s.profile?.exams ?? [];
+          const ids = examSkills(exams);
+          const skills = ids.map((id) => ({ id, weight: exams.length ? Math.max(...exams.map((e) => SKILL_BY_ID[id].weights[e])) : 1 }));
+          const slots = drillSlots({ ...pick(), skills, states: s.skills });
+          return begin({ mode: 'drill', title: policy.title, slots, quiz: 'drill', countsAsRun: true, timed: Boolean(s.profile?.style.timed) });
+        }
+        case 'repair': {
+          if (!opts.skillId) return { ok: false, reason: 'empty' };
+          const slots = repairSlots({ ...pick(), skillId: opts.skillId, states: s.skills });
+          return begin({ mode: 'repair', title: `Repair: ${SKILL_BY_ID[opts.skillId]?.name ?? ''}`, slots, quiz: 'repair' });
+        }
+        case 'recall': {
+          const due = dueReviews(s.skills, Date.now());
+          const skills = opts.skills?.length ? opts.skills : due;
+          const slots = heldOutSlots({ ...pick(), skills, states: s.skills, length: policy.length, avoid: recentlyPlayedFamilies(), reason: 'recall' });
+          return begin({ mode: 'review', title: policy.title, slots, quiz: 'recall' });
+        }
+      }
     },
 
     currentItem: () => {
@@ -670,9 +834,46 @@ export const useApp = create<AppState>()((set, get) => {
       const nextTargets = todaysTargets(s.plan, s.skills, now);
       const nextLabel = nextTargets.length ? SKILL_BY_ID[nextTargets[0]]?.name : undefined;
 
+      // A mission counts as done when its last puzzle is answered (not ended early). Its object, any
+      // milestone it completes and the weekly goal are settled below; each pays at most once.
+      let quests = s.quests;
+      if (a.missionId && !early && results.length > 0 && results.length >= a.slots.length) {
+        const prev = quests[a.missionId];
+        const best = !prev?.best || correct / results.length > prev.best.correct / Math.max(1, prev.best.total) ? { correct, total: results.length } : prev.best;
+        quests = {
+          ...quests,
+          [a.missionId]: { ...prev, version: MISSION_BY_ID[a.missionId]?.version ?? 1, completedAt: prev?.completedAt ?? now, best, runs: (prev?.runs ?? 0) + 1 },
+        };
+        track('quest_completed', { mission: a.missionId, correct, total: results.length });
+      }
+      const isCheck = a.quiz === 'check' || a.quiz === 'drill' || a.quiz === 'recall';
+      const check = isCheck && results.length > 0 ? summarizeCheck(results.map((r) => ({ skillId: r.skillId, templateId: r.templateId, correct: r.correct, hint: r.hint, misconception: s.attempts.find((x) => x.id === r.attemptId)?.misconception }))) : undefined;
+      const checks: CheckRecord[] =
+        check && !early
+          ? [
+              ...s.checks,
+              {
+                id: a.id,
+                kind: a.quiz!,
+                missionId: a.missionId,
+                skills: [...new Set(results.map((r) => r.skillId))],
+                correct,
+                total: results.length,
+                at: now,
+                missed: results.filter((r) => !r.correct).map((r) => ({ skillId: r.skillId, misconception: s.attempts.find((x) => x.id === r.attemptId)?.misconception })),
+              },
+            ]
+          : s.checks;
+      if (check) track('quiz_submitted', { quiz: a.quiz, correct, total: results.length });
+
       const recap: Recap = {
         id: a.id,
         mode: a.mode,
+        missionId: a.missionId,
+        quiz: a.quiz,
+        check,
+        attemptIds: results.map((r) => r.attemptId),
+        rewards: { coins: 0, items: [] },
         title: early ? `${a.title} (ended early)` : a.title,
         correct,
         total: results.length,
@@ -695,15 +896,20 @@ export const useApp = create<AppState>()((set, get) => {
         lastRecap: recap,
         sessionLog,
         tokenLedger,
+        quests,
+        checks,
         ...derived({ sessionLog, tokenLedger, daily: s.daily }),
         ladderBest,
         checkpoints: a.mode === 'checkpoint' ? [...s.checkpoints, { at: now, correct, total: results.length }] : s.checkpoints,
       });
+      const settled = settleRewards(now);
+      const withRewards: Recap = { ...recap, rewards: { coins: tokens + settled.coins, items: settled.newItems } };
+      set({ lastRecap: withRewards });
       track('session_completed', { mode: a.mode, correct, total: results.length, early });
       if (firstSession && results.length > 0 && !early) track('mission_activated', {});
       void get().syncNow();
       void uploadEvents();
-      return recap;
+      return withRewards;
     },
 
     abandonSession: () => {
@@ -781,6 +987,22 @@ export const useApp = create<AppState>()((set, get) => {
       track('restore_completed', { count: res.productIds.length });
       return { ok: res.ok };
     },
+
+    buyItem: (itemId) => {
+      const s = get();
+      const r = buy(s.tokenLedger, s.grants, itemId, Date.now());
+      if (!r) return false;
+      set({ tokenLedger: r.ledger, grants: r.grants, ...derived({ tokenLedger: r.ledger, sessionLog: s.sessionLog, daily: s.daily }) });
+      track('project_revealed', { item: itemId, bought: true });
+      return true;
+    },
+
+    chooseProject: (itemId) => {
+      set({ project: itemId ? { itemId, at: Date.now() } : undefined });
+      if (itemId) track('project_selected', { item: itemId });
+    },
+
+    setFeel: (patch) => set({ settings: { ...get().settings, ...patch } }),
 
     report: (item, reason) => {
       const s = get();

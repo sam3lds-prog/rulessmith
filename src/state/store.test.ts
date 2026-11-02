@@ -140,7 +140,11 @@ function wrongResponse(item: Item): Response {
           ? [{ kind: 'sort', yes: [] }, { kind: 'sort', yes: p.numbers.map((_, i) => i) }]
           : p.kind === 'refute'
             ? [{ kind: 'refute', verdict: 'true' }, ...p.candidates.map((c) => ({ kind: 'refute' as const, verdict: 'false' as const, counterexample: c }))]
-            : p.mode === 'all'
+            : p.kind === 'factor'
+              ? [{ kind: 'factor', primes: [p.n] }]
+              : p.kind === 'rail'
+                ? p.stops.map((_, i) => ({ kind: 'rail' as const, stop: i }))
+                : p.mode === 'all'
               ? [{ kind: 'constructAll', digits: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] }, { kind: 'constructAll', digits: [0] }]
               : Array.from({ length: 10 }, (_, d) => ({ kind: 'construct' as const, digits: p.fixed.filter((x) => x === null).map(() => d) }));
   const wrong = tries.find((r) => !checkItem(item, r).correct);
@@ -663,5 +667,152 @@ describe('deleting', () => {
     expect(s.profile).toBeUndefined();
     expect(h.server.attempts.has('user-a')).toBe(false);
     expect([...h.mem.keys()].some((k) => k.startsWith('rulesmith:user:user-a'))).toBe(false);
+  });
+});
+
+describe('the workshop loop', () => {
+  function playActive(m: StoreModule, opts: { correct?: boolean } = {}) {
+    for (;;) {
+      answer(m, opts);
+      if (m.useApp.getState().advance().done) break;
+    }
+    return m.useApp.getState().finishSession()!;
+  }
+
+  it('a mission lights its object once, however often it is played', async () => {
+    const m = await launch();
+    onboard(m);
+    expect(m.useApp.getState().startMission('gate-1').ok).toBe(true);
+    const a = m.useApp.getState().active!;
+    expect(a.missionId).toBe('gate-1');
+    expect(a.slots.every((x) => x.support === 'guided')).toBe(true);
+    expect(a.countsAsRun).toBe(false);
+    const recap = playActive(m);
+    expect(recap.rewards.items).toEqual(['bench-lamp']);
+    expect(recap.rewards.coins).toBe(5);
+    expect(m.useApp.getState().quests['gate-1'].completedAt).toBeDefined();
+
+    m.useApp.getState().startMission('gate-1');
+    const again = playActive(m);
+    expect(again.rewards.items).toEqual([]);
+    expect(m.useApp.getState().grants.filter((g) => g.itemId === 'bench-lamp')).toHaveLength(1);
+    expect(m.useApp.getState().quests['gate-1'].runs).toBe(2);
+  });
+
+  it('ending a mission early completes nothing', async () => {
+    const m = await launch();
+    onboard(m);
+    m.useApp.getState().startMission('forge-9');
+    answer(m);
+    m.useApp.getState().advance();
+    const recap = m.useApp.getState().finishSession({ early: true })!;
+    expect(recap.rewards.items).toEqual([]);
+    expect(m.useApp.getState().quests['forge-9'].completedAt).toBeUndefined();
+  });
+
+  it('a concept check holds out what was just played, waits to show verdicts, and records what needs a look', async () => {
+    const m = await launch();
+    onboard(m);
+    m.useApp.getState().startMission('forge-9');
+    playActive(m);
+    expect(m.useApp.getState().startMission('check-gate').ok).toBe(true);
+    const a = m.useApp.getState().active!;
+    expect(a.feedback).toBe('after-set');
+    expect(a.slots).toHaveLength(5);
+    expect(a.slots.every((x) => x.support === 'independent')).toBe(true);
+    expect(a.slots.some((x) => x.templateId === 'div.digit-sum/construct')).toBe(false);
+    const recap = playActive(m, { correct: false });
+    expect(recap.check?.correct).toBe(0);
+    expect(recap.check?.next.kind).toBe('repair');
+    expect(recap.rewards.items).toContain('gate-token');
+    // Two different missions are now done, so the bookshelf milestone is earned too.
+    expect(recap.rewards.items).toContain('bookshelf');
+    const rec = m.useApp.getState().checks.at(-1)!;
+    expect(rec).toMatchObject({ kind: 'check', missionId: 'check-gate', correct: 0, total: 5 });
+    // Missed independent answers stay as they were: nothing replaced them.
+    expect(m.useApp.getState().attempts.filter((x) => x.mode === 'check' && !x.correct)).toHaveLength(5);
+
+    // Repair is short and guided; a fresh check can follow.
+    const skill = recap.check!.next.kind === 'repair' ? recap.check!.next.skillId : '';
+    expect(m.useApp.getState().startQuiz('repair', { skillId: skill }).ok).toBe(true);
+    expect(m.useApp.getState().active!.slots.every((x) => x.support === 'guided')).toBe(true);
+    playActive(m);
+    expect(m.useApp.getState().startQuiz('check', { skills: [skill] }).ok).toBe(true);
+  });
+
+  it('recall opens a day after the check', async () => {
+    const m = await launch();
+    onboard(m);
+    expect(m.useApp.getState().startMission('recall-gate')).toEqual({ ok: false, reason: 'locked' });
+    m.useApp.getState().startMission('check-gate');
+    playActive(m);
+    expect(m.useApp.getState().startMission('recall-gate')).toEqual({ ok: false, reason: 'locked' });
+    const real = Date.now;
+    Date.now = () => real() + 25 * 3600 * 1000;
+    try {
+      expect(m.useApp.getState().startMission('recall-gate').ok).toBe(true);
+      expect(m.useApp.getState().active!.quiz).toBe('recall');
+    } finally {
+      Date.now = real;
+    }
+  });
+
+  it('coins buy an object once; the project and feel settings are saved', async () => {
+    let m = await launch();
+    onboard(m);
+    for (let i = 0; i < 3; i++) {
+      m.useApp.getState().startMission('gate-1');
+      playActive(m);
+    }
+    expect(m.useApp.getState().tokens).toBe(15);
+    expect(m.useApp.getState().buyItem('fern')).toBe(true);
+    expect(m.useApp.getState().buyItem('fern')).toBe(false);
+    expect(m.useApp.getState().tokens).toBe(0);
+    m.useApp.getState().chooseProject('rug');
+    m.useApp.getState().setFeel({ sound: false, focus: true });
+    await m.flushSaves();
+    m = await launch();
+    const s = m.useApp.getState();
+    expect(s.grants.map((g) => g.itemId)).toEqual(expect.arrayContaining(['bench-lamp', 'fern']));
+    expect(s.project?.itemId).toBe('rug');
+    expect(s.settings).toMatchObject({ sound: false, focus: true, haptics: true });
+  });
+
+  it('a weekly goal of four learning days pays once', async () => {
+    const m = await launch();
+    onboard(m);
+    const real = Date.now;
+    const monday = new Date(2026, 10, 9, 10).getTime();
+    try {
+      for (let d = 0; d < 5; d++) {
+        Date.now = () => monday + d * 86400000;
+        m.useApp.getState().startMission('gate-1');
+        playActive(m);
+      }
+    } finally {
+      Date.now = real;
+    }
+    const s = m.useApp.getState();
+    expect(s.tokenLedger.filter((e) => e.reason === 'weekly')).toHaveLength(1);
+    expect(s.grants.some((g) => g.itemId === 'weekly-ribbon')).toBe(true);
+  });
+
+  it('missions and objects sync between devices without granting twice', async () => {
+    const m = await launch();
+    onboard(m);
+    h.server.session = 'user-a';
+    await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    m.useApp.getState().startMission('gate-1');
+    playActive(m);
+    await m.useApp.getState().syncNow();
+    const snap = h.server.snapshots.get('user-a');
+    expect(snap.quests['gate-1'].completedAt).toBeDefined();
+    expect(snap.grants.map((g: { itemId: string }) => g.itemId)).toContain('bench-lamp');
+    // Another device also finished gate-1 earlier and earned the same lamp.
+    snap.quests['gate-1'].completedAt -= 1000;
+    snap.grants.push({ id: 'item:bench-lamp', itemId: 'bench-lamp', source: 'mission:gate-1', at: 1, catalogVersion: 1 });
+    h.server.versions.set('user-a', (h.server.versions.get('user-a') ?? 0) + 1);
+    await m.useApp.getState().syncNow();
+    expect(m.useApp.getState().grants.filter((g) => g.itemId === 'bench-lamp')).toHaveLength(1);
   });
 });

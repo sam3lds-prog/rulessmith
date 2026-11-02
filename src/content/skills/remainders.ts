@@ -294,6 +294,37 @@ const arithmeticTransfer: Template = {
   },
 };
 
+/**
+ * Remainder Rails: a token starts at stop 0 and moves n steps round a loop of d
+ * stops. Complete loops change nothing, so it lands on n mod d.
+ */
+const basicsRail: Template = {
+  id: 'rem.basics/rail',
+  skillId: 'rem.basics',
+  board: 'rail',
+  version: 1,
+  generate: ({ rng, level }) => {
+    const d = level <= 2 ? rng.int(3, 6) : level <= 5 ? rng.int(5, 9) : rng.int(7, 12);
+    const n = level <= 2 ? rng.int(d + 2, 40) : level <= 5 ? rng.int(40, 400) : rng.int(400, 99999);
+    const q = Math.floor(n / d);
+    const r = n % d;
+    return {
+      prompt: `A token starts at stop 0 on a loop of ${d} stops and moves ${fmt(n)} steps forward. Where does it land?`,
+      ruleLens: 'Every complete loop brings the token back to where it started. Only the leftover steps move it: the remainder of steps ÷ stops.',
+      hints: [`How many complete loops of ${d} fit in ${fmt(n)} steps?`, 'The leftover steps after those loops decide the stop.'],
+      explanation: `${fmt(n)} = ${d} × ${fmt(q)} + ${r}. The ${fmt(q)} complete loops end back at stop 0, and the last ${r} step${r === 1 ? '' : 's'} reach stop ${r}.`,
+      payload: {
+        kind: 'rail',
+        spec: { op: 'remainder', n: String(n), d },
+        stops: Array.from({ length: d }, (_, i) => ({ label: String(i), value: i })),
+        walk: `${fmt(n)} steps`,
+        loop: d,
+      },
+      key: { kind: 'rail', stop: r },
+    };
+  },
+};
+
 // ================================================================ rem.cycles
 
 const RC_LENS = 'Units digits of powers repeat in short cycles. 7: 7, 9, 3, 1, then again. Divide the exponent by the cycle length and use the remainder.';
@@ -316,6 +347,46 @@ function powerFromCycle(base: number, exp: number, d: number) {
   const pos = (exp - 1) % c.length;
   return { c, pos, value: c[pos] };
 }
+
+/**
+ * Remainder Rails, power cycles: the stops are the repeating units digits, and
+ * the learner finds where a large power lands. An exponent divisible by the
+ * cycle length lands on the last stop, never on a "zero" position.
+ */
+const cyclesRail: Template = {
+  id: 'rem.cycles/rail',
+  skillId: 'rem.cycles',
+  board: 'rail',
+  version: 1,
+  generate: ({ rng, level }) => {
+    const base = level <= 4 ? rng.pick([2, 3, 7, 8]) : rng.pick([2, 3, 7, 8, 12, 13, 17, 18, 22, 27]);
+    const c = cycleOf(base, 10);
+    // About a third of the time the exponent is a multiple of the cycle length: the trap the guide calls out.
+    const span = level <= 3 ? [5, 24] : level <= 6 ? [25, 99] : [100, 999];
+    let exp = rng.int(span[0], span[1]);
+    if (rng.chance(0.35)) exp = Math.max(c.length, exp - (exp % c.length));
+    const pos = (exp - 1) % c.length;
+    const value = c[pos];
+    const mult = exp % c.length === 0;
+    return {
+      prompt: `Units digits of powers of ${base} go round a loop: ${c.join(', ')}. Which units digit does ${base}${sup(exp)} have?`,
+      ruleLens: RC_LENS,
+      hints: [
+        `The loop has ${c.length} stops. Divide ${exp} by ${c.length}.`,
+        'A remainder of 0 means the last stop in the loop, not a stop before the first.',
+      ],
+      explanation: `${exp} = ${c.length} × ${Math.floor(exp / c.length)} + ${exp % c.length}. ${mult ? `Remainder 0 means a whole number of loops, so ${base}${sup(exp)} lands on the last stop, ${value}.` : `Remainder ${exp % c.length} means stop ${exp % c.length} of the loop, so ${base}${sup(exp)} ends in ${value}.`}`,
+      payload: {
+        kind: 'rail',
+        spec: { op: 'powMod', base, exp, d: 10 },
+        stops: c.map((v, i) => ({ label: `${base}${sup(i + 1)} → ${v}`, value: v })),
+        walk: `${base}${sup(exp)}`,
+        loop: c.length,
+      },
+      key: { kind: 'rail', stop: pos },
+    };
+  },
+};
 
 const cyclesUnits: Template = {
   id: 'rem.cycles/units',
@@ -518,6 +589,7 @@ export const REMAINDER_TEMPLATES: Template[] = [
   basicsNumeric,
   basicsChoice,
   basicsWeekday,
+  basicsRail,
   digitRulesSum,
   digitRulesTail,
   digitRulesRepeat,
@@ -525,6 +597,7 @@ export const REMAINDER_TEMPLATES: Template[] = [
   arithmeticChoice,
   arithmeticTransfer,
   cyclesUnits,
+  cyclesRail,
   cyclesMod,
   cyclesProduct,
   reverseSmallest,

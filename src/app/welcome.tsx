@@ -3,11 +3,13 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { track } from '../analytics/track';
 import { ItemScreen } from '../boards/ItemScreen';
-import { Tile } from '../boards/Tile';
 import { APP_NAME, APP_TAGLINE } from '../config';
 import { serveItem, TEMPLATES, templatesForSkill, templateVersionOf } from '../content';
+import { gameForItem } from '../games/registry';
 import { useApp } from '../state/store';
-import { Body, Button, Gap, Heading, Screen, Small } from '../ui/kit';
+import { Companion } from '../ui/Companion';
+import { Body, Button, Eyebrow, Gap, Heading, Screen, Small } from '../ui/kit';
+import { WorkshopScene } from '../ui/WorkshopScene';
 import { color, font, space } from '../ui/theme';
 
 type Stage = 'intro' | 'puzzle' | 'after';
@@ -34,6 +36,8 @@ export default function Welcome() {
         key={item.id}
         item={item}
         support="guided"
+        game={gameForItem(item)}
+        eyebrow="Your first puzzle"
         header={<Small style={{ marginBottom: space.xs }}>Your first puzzle. No sign-up.</Small>}
         onAnswered={(a) => {
           const r = { correct: a.correct, ms: a.ms };
@@ -71,31 +75,30 @@ export default function Welcome() {
 
   return (
     <Screen footer={<Button title="Try a puzzle" onPress={() => (item ? setStage('puzzle') : router.push('/onboarding/about'))} accessibilityHint="Opens a 60-second puzzle" />}>
-      <Gap h={space.xxl} />
-      <Text style={styles.wordmark} accessibilityRole="header">
-        {APP_NAME}
-      </Text>
-      <Heading style={{ color: color.inkSoft, fontFamily: font.label }}>{APP_TAGLINE}</Heading>
-      <Gap h={space.xxl} />
-      <View style={styles.demo} accessibilityLabel="Example: 4,872. Its digits add to 21, so it is divisible by 3 but not by 9.">
-        <View style={styles.tiles}>
-          {['4', '8', '7', '2'].map((d) => (
-            <Tile key={d} label={d} size="lg" />
-          ))}
+      <Gap h={space.xl} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.wordmark} accessibilityRole="header">
+            {APP_NAME}.
+          </Text>
+          <Heading style={{ color: color.inkSoft, fontFamily: font.label }}>{APP_TAGLINE}</Heading>
         </View>
-        <Text style={styles.sum}>4 + 8 + 7 + 2 = 21</Text>
-        <Small style={{ textAlign: 'center' }}>21 is a multiple of 3, so 4,872 is divisible by 3. It isn't a multiple of 9, so 4,872 isn't divisible by 9.</Small>
+        <Companion mood="curious" size={64} />
       </View>
-      <Gap h={space.xxl} />
+      <Gap h={space.xl} />
+      <WorkshopScene owned={new Set()} />
+      <Gap h={space.lg} />
+      <Eyebrow>A workshop of ideas</Eyebrow>
+      <Body style={{ marginTop: space.xs }}>
+        Every rule you figure out adds something to your workshop. The first one lights the lamp.
+      </Body>
+      <Gap h={space.sm} />
       <Body>Number-property puzzles for GMAT and GRE quant. Try one now, no sign-up. It takes about a minute.</Body>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  wordmark: { fontFamily: font.display, fontSize: 56, lineHeight: 58, letterSpacing: -2, color: color.ink },
+  wordmark: { fontFamily: font.display, fontSize: 48, lineHeight: 52, letterSpacing: -1, color: color.ink },
   big: { fontFamily: font.display, fontSize: 32, lineHeight: 36, letterSpacing: -0.6, color: color.ink },
-  demo: { alignItems: 'center', gap: space.md },
-  tiles: { flexDirection: 'row', gap: space.sm },
-  sum: { fontFamily: font.bodyBold, fontSize: 22, color: color.cobaltDeep, fontVariant: ['tabular-nums'] },
 });

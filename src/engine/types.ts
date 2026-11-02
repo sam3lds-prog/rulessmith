@@ -34,7 +34,23 @@ export type DisplayStatus = MasteryStatus | 'review';
 
 export type Band = 'learn' | 'practice' | 'challenge';
 
-export type SessionMode = 'journey' | 'skill' | 'review' | 'ladder' | 'challenge' | 'checkpoint' | 'daily' | 'try';
+export type SessionMode =
+  | 'journey'
+  | 'skill'
+  | 'review'
+  | 'ladder'
+  | 'challenge'
+  | 'checkpoint'
+  | 'daily'
+  | 'try'
+  /** A mission of a chapter (a game round, transfer or recall set). */
+  | 'quest'
+  /** A concept check: fresh items, rule hidden, explanations after the set. */
+  | 'check'
+  /** A mixed exam drill across mapped skills. */
+  | 'drill'
+  /** A short guided repair after a missed check. */
+  | 'repair';
 
 /**
  * How an item is shown.
@@ -119,7 +135,7 @@ export interface Slot {
   seed: number;
   band: Band;
   support: Support;
-  reason: 'target' | 'review' | 'stretch' | 'checkpoint' | 'challenge' | 'ladder' | 'daily' | 'placement' | 'try';
+  reason: 'target' | 'review' | 'stretch' | 'checkpoint' | 'challenge' | 'ladder' | 'daily' | 'placement' | 'try' | 'quest' | 'check' | 'drill' | 'recall' | 'repair';
 }
 
 export interface PlanWeek {

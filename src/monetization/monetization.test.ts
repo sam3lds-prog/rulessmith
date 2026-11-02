@@ -88,7 +88,10 @@ describe('ad rules', () => {
   });
 
   it('banners only on browse screens; rewarded only for free adults', () => {
-    expect(shouldShowBanner('topics', base)).toBe(true);
+    expect(shouldShowBanner('plan', base)).toBe(true);
+    expect(shouldShowBanner('practice', base)).toBe(true);
+    expect(shouldShowBanner('workshop', base)).toBe(false);
+    expect(shouldShowBanner('play', base)).toBe(false);
     expect(shouldShowBanner('session', base)).toBe(false);
     expect(shouldShowBanner('recap', base)).toBe(false);
     expect(canOfferRewarded(base)).toBe(true);

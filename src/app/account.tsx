@@ -119,7 +119,7 @@ export default function Account() {
           whoever uses it without signing in.
         </Small>
         {error ? (
-          <Plate tone="brass" style={{ marginTop: space.md }}>
+          <Plate tone="warm" style={{ marginTop: space.md }}>
             <Small style={{ color: color.ink }}>{error}</Small>
           </Plate>
         ) : null}
@@ -207,7 +207,7 @@ export default function Account() {
         </>
       )}
       {error ? (
-        <Plate tone="brass" style={{ marginTop: space.md }}>
+        <Plate tone="warm" style={{ marginTop: space.md }}>
           <Small style={{ color: color.ink }}>{error}</Small>
         </Plate>
       ) : null}

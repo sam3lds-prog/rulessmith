@@ -44,7 +44,7 @@ export default function Premium() {
 
   if (done) {
     return (
-      <Screen footer={<Button title="Start practising" onPress={() => router.replace('/today')} />}>
+      <Screen footer={<Button title="Start practising" onPress={() => router.replace('/play')} />}>
         <Gap h={space.xxl} />
         <Title>{done} is active.</Title>
         <Gap />
@@ -138,6 +138,6 @@ const styles = StyleSheet.create({
     borderColor: color.rule,
     backgroundColor: color.surface,
   },
-  optionOn: { borderColor: color.cobalt, borderWidth: 2.5, backgroundColor: color.cobaltWash },
+  optionOn: { borderColor: color.action, borderWidth: 2.5, backgroundColor: color.actionWash },
   price: { fontFamily: font.display, fontSize: 20, color: color.ink, fontVariant: ['tabular-nums'] },
 });

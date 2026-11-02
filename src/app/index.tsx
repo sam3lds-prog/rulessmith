@@ -8,5 +8,5 @@ export default function Index() {
   if (!profile) return <Redirect href="/welcome" />;
   if (!plan) return <Redirect href="/onboarding/placement" />;
   if (active) return <Redirect href="/session" />;
-  return <Redirect href="/today" />;
+  return <Redirect href="/play" />;
 }

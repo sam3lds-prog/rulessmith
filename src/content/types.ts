@@ -8,7 +8,7 @@
  * (content.test.ts) can confirm the generator and the checker agree.
  */
 
-export type BoardKind = 'sort' | 'construct' | 'refute' | 'choice' | 'numeric';
+export type BoardKind = 'sort' | 'construct' | 'refute' | 'choice' | 'numeric' | 'factor' | 'rail';
 
 /** A property of a single whole number. Evaluated with BigInt arithmetic. */
 export type NumPredicate =
@@ -123,7 +123,33 @@ export interface NumericPayload {
   unit?: string;
 }
 
-export type Payload = SortPayload | ConstructPayload | RefutePayload | ChoicePayload | NumericPayload;
+/**
+ * Factor Factory: split n into factor pairs until every piece is prime. The
+ * answer is the multiset of primes; the checker multiplies them back and tests
+ * each for primality by trial division.
+ */
+export interface FactorPayload {
+  kind: 'factor';
+  n: number;
+}
+
+/**
+ * Remainder Rails: a token travels round a loop of stops; the learner picks the
+ * stop it lands on. Each stop carries the value it stands for (a remainder, or a
+ * units digit in a power cycle) and the checker compares that value with
+ * `spec`, evaluated by brute force. Exactly one stop carries the right value.
+ */
+export interface RailPayload {
+  kind: 'rail';
+  spec: ValueSpec;
+  stops: { label: string; value: number }[];
+  /** How the walk is described on the board, e.g. "17 steps" or "the 23rd power". */
+  walk: string;
+  /** Loop length shown on the board (stops.length). */
+  loop: number;
+}
+
+export type Payload = SortPayload | ConstructPayload | RefutePayload | ChoicePayload | NumericPayload | FactorPayload | RailPayload;
 
 export type Response =
   | { kind: 'sort'; yes: number[] }
@@ -132,7 +158,9 @@ export type Response =
   | { kind: 'refute'; verdict: 'true' }
   | { kind: 'refute'; verdict: 'false'; counterexample: number[] }
   | { kind: 'choice'; optionId: string }
-  | { kind: 'numeric'; value: string };
+  | { kind: 'numeric'; value: string }
+  | { kind: 'factor'; primes: number[] }
+  | { kind: 'rail'; stop: number };
 
 export interface Item {
   /** `${templateId}@${level}#${seed}` — enough to regenerate the item exactly. */
@@ -168,7 +196,10 @@ export type BoardDraft =
   | { kind: 'constructAll'; picked: number[] }
   | { kind: 'refute'; choice: 'true' | number | null }
   | { kind: 'choice'; sel: string | null }
-  | { kind: 'numeric'; text: string };
+  | { kind: 'numeric'; text: string }
+  /** Each split: the path of the piece split ('' = the whole number, then 'a'/'b' for its two parts) and the divisor used. */
+  | { kind: 'factor'; splits: { path: string; d: number }[] }
+  | { kind: 'rail'; stop: number | null };
 
 export interface CheckResult {
   correct: boolean;

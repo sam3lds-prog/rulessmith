@@ -36,7 +36,7 @@ export default function Challenge() {
 
   return (
     <Screen footer={<Button title="Start a 10-puzzle run" onPress={start} disabled={picked.length === 0 || !allowed(range)} />}>
-      <BackLink label="Topics" />
+      <BackLink />
       <Title>Challenge builder</Title>
       <Gap h={space.sm} />
       <Body>Pick the skills and the difficulty. Every puzzle is generated fresh, so you can run this as often as you like.</Body>
@@ -65,12 +65,12 @@ export default function Challenge() {
         ))}
       </View>
       {!allowed(range) ? (
-        <Plate tone="brass" style={{ marginTop: space.md }}>
+        <Plate tone="warm" style={{ marginTop: space.md }}>
           <Small style={{ color: color.ink }}>This difficulty is locked for the skills you picked.</Small>
           <Button title="See Premium and packs" kind="secondary" onPress={() => router.push('/premium')} />
         </Plate>
       ) : null}
-      {error ? <Small style={{ marginTop: space.sm, color: color.brick }}>{error}</Small> : null}
+      {error ? <Small style={{ marginTop: space.sm, color: color.wrong }}>{error}</Small> : null}
     </Screen>
   );
 }

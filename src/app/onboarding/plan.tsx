@@ -18,7 +18,7 @@ export default function OnboardingPlan() {
   const cloud = !!config.supabaseUrl && policyFor(profile.ageBand).canCreateAccount;
   const save = () => {
     saveOnDevice();
-    router.replace(cloud ? '/account' : '/today');
+    router.replace(cloud ? '/account' : '/play');
   };
 
   return (

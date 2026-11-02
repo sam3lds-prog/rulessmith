@@ -1,17 +1,27 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Switch, View } from 'react-native';
-import { config } from '../../config';
-import { cloudConfigured } from '../../data/cloud';
-import { queuedCount } from '../../analytics/track';
-import { CONTENT_VERSION, EXAMS, remoteDisabledTemplates } from '../../content';
-import { formatShortDate, parseDay } from '../../engine/time';
-import { isPremium } from '../../monetization/entitlements';
-import { PRODUCT_BY_ID } from '../../monetization/products';
-import { policyFor } from '../../policy/age';
-import { useApp } from '../../state/store';
-import { Body, Button, Gap, Heading, LinkRow, Plate, Row, Screen, Small, Title } from '../../ui/kit';
-import { color, space } from '../../ui/theme';
+import { config } from '../config';
+import { cloudConfigured } from '../data/cloud';
+import { queuedCount } from '../analytics/track';
+import { CONTENT_VERSION, EXAMS, remoteDisabledTemplates } from '../content';
+import { formatShortDate, parseDay } from '../engine/time';
+import { isPremium } from '../monetization/entitlements';
+import { PRODUCT_BY_ID } from '../monetization/products';
+import { policyFor } from '../policy/age';
+import { useApp } from '../state/store';
+import type { FeelSettings } from '../state/types';
+import { TOKEN_COSTS, TOKEN_REWARDS } from '../monetization/tokens';
+import { WEEKLY_REWARD } from '../rewards/ledger';
+import { BackLink, Body, Button, Gap, Heading, LinkRow, Plate, Row, Screen, Small, Title } from '../ui/kit';
+import { color, space } from '../ui/theme';
+
+const FEEL_ROWS: { key: keyof FeelSettings; title: string; detail: string }[] = [
+  { key: 'sound', title: 'Sounds', detail: 'Soft taps and chimes. Off when your phone is on silent.' },
+  { key: 'haptics', title: 'Vibration', detail: 'A light tap when you place a tile or get it right.' },
+  { key: 'reduceMotion', title: 'Reduce motion', detail: 'No moving gears or animated reveals. Also follows your device setting.' },
+  { key: 'focus', title: 'Focus', detail: 'A calmer workshop: no moving scenery, quick reveals and no celebration sounds.' },
+];
 
 export default function You() {
   const s = useApp();
@@ -29,7 +39,8 @@ export default function You() {
 
   return (
     <Screen>
-      <Title>You</Title>
+      <BackLink />
+      <Title>You and settings</Title>
       <Gap />
       {p ? (
         <>
@@ -74,10 +85,27 @@ export default function You() {
       ) : null}
 
       <Gap h={space.lg} />
-      <Heading>Tokens</Heading>
+      <Heading>Workshop Coins</Heading>
       <Small style={{ marginTop: space.xs }}>
-        You have {s.tokens}. Earn 5 for each finished session and 3 for each daily puzzle. Spend 10 on a bonus run. Tokens are never sold, and hints are always free.
+        You have {Math.max(0, s.tokens)}. Earn {TOKEN_REWARDS.sessionComplete} for each finished session, {TOKEN_REWARDS.dailyPuzzle} for each daily puzzle and {WEEKLY_REWARD} for a weekly goal. Spend them on workshop objects or {TOKEN_COSTS.bonusRun} on a bonus run. Coins are never sold, and hints are always free.
       </Small>
+
+      <Gap h={space.xl} />
+      <Heading>How it feels</Heading>
+      {FEEL_ROWS.map((r) => (
+        <View key={r.key} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 56 }}>
+          <View style={{ flex: 1 }}>
+            <Body style={{ fontSize: 16 }}>{r.title}</Body>
+            <Small>{r.detail}</Small>
+          </View>
+          <Switch
+            accessibilityLabel={r.title}
+            value={s.settings[r.key]}
+            onValueChange={(v) => s.setFeel({ [r.key]: v })}
+            trackColor={{ true: color.action, false: color.ruleStrong }}
+          />
+        </View>
+      ))}
 
       <Gap h={space.xl} />
       <Heading>Your data</Heading>
@@ -98,7 +126,7 @@ export default function You() {
       {!confirmDelete ? (
         <Button title="Delete my data" kind="danger" onPress={() => setConfirmDelete(true)} style={{ marginTop: space.md }} />
       ) : (
-        <Plate tone="brass" style={{ marginTop: space.md }}>
+        <Plate tone="warm" style={{ marginTop: space.md }}>
           <Body>This permanently deletes your profile, plan and progress{s.account.mode === 'cloud' ? ', including your synced account and anything saved on this device without an account' : ' from this device'}. Purchases stay with your app store account and can be restored.</Body>
           <Row>
             <Button title="Keep my data" kind="secondary" onPress={() => setConfirmDelete(false)} style={{ flex: 1 }} />
@@ -116,7 +144,7 @@ export default function You() {
               style={{ flex: 1 }}
             />
           </Row>
-          {deleteError ? <Small style={{ color: color.brick }}>{deleteError}</Small> : null}
+          {deleteError ? <Small style={{ color: color.wrong }}>{deleteError}</Small> : null}
         </Plate>
       )}
 
@@ -126,7 +154,7 @@ export default function You() {
           <Heading style={{ color: color.inkSoft }}>Developer</Heading>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 }}>
             <Small style={{ flex: 1 }}>Preview ad placements (ads are {config.adsEnabled ? 'on' : 'off'} in config)</Small>
-            <Switch value={s.settings.previewAds} onValueChange={s.setPreviewAds} trackColor={{ true: color.cobalt, false: color.ruleStrong }} />
+            <Switch value={s.settings.previewAds} onValueChange={s.setPreviewAds} trackColor={{ true: color.action, false: color.ruleStrong }} />
           </View>
           <Small>Content reports stored: {s.reports.length}</Small>
           <Small>

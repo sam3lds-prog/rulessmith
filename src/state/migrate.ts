@@ -22,7 +22,7 @@ import { RENAMED_PRODUCTS } from '../monetization/products';
 import { derived, SNAPSHOT_VERSION, type Synced } from '../sync/merge';
 import { INITIAL, type ContentReport, type Data, type DailyResult, type SessionLogEntry, type TokenEntry } from './types';
 
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 type Loose = Record<string, any>;
 
@@ -155,6 +155,13 @@ export function migrateData(raw: Loose | undefined, version: number): Data {
       ...derived({ tokenLedger, sessionLog, daily }),
     });
   }
+  if (version < 3) {
+    // v3 (the workshop): mission progress, objects, check records and feel settings start empty or at their defaults.
+    // Existing tokens become Workshop Coins as they are (same ledger), and an unfinished session keeps immediate feedback.
+    if (s.active) s.active = { ...s.active, feedback: s.active.feedback ?? 'immediate' };
+    if (s.lastRecap) s.lastRecap = { ...s.lastRecap, attemptIds: s.lastRecap.attemptIds ?? [], rewards: s.lastRecap.rewards ?? { coins: s.lastRecap.tokens ?? 0, items: [] } };
+  }
+  s.settings = { ...INITIAL.settings, ...(s.settings ?? {}) };
   const out = { ...INITIAL } as unknown as Loose;
   for (const k of Object.keys(INITIAL)) if (s[k] !== undefined) out[k] = s[k];
   return out as unknown as Data;
@@ -179,5 +186,9 @@ export function migrateSnapshot(raw: Loose | null | undefined): Synced | undefin
     daily: s.daily ?? {},
     ladderBest: s.ladderBest ?? {},
     checkpoints: s.checkpoints ?? [],
+    quests: s.quests ?? {},
+    grants: s.grants ?? [],
+    checks: s.checks ?? [],
+    project: s.project,
   };
 }

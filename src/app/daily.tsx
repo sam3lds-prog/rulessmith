@@ -34,8 +34,8 @@ export default function Daily() {
 
   if (playing && !item) {
     return (
-      <Screen footer={<Button title="Back to today" onPress={() => router.replace(profile ? '/today' : '/welcome')} />}>
-        <BackLink label="Today" />
+      <Screen footer={<Button title="Back to Play" onPress={() => router.replace(profile ? '/play' : '/welcome')} />}>
+        <BackLink />
         <Title>No daily puzzle today</Title>
         <Gap />
         <Body>Today's puzzle has been taken down while we fix it. A new one arrives tomorrow.</Body>
@@ -50,7 +50,7 @@ export default function Daily() {
         key={item.id}
         item={item}
         support="independent"
-        header={<BackLink label="Today" />}
+        header={<BackLink />}
         initialProgress={saved}
         onProgress={(p) => saveDailyProgress(day, p)}
         onAnswered={({ result: _result, ...a }) => recordDaily(day, item, a)}
@@ -76,8 +76,8 @@ export default function Daily() {
   };
 
   return (
-    <Screen footer={<Button title={profile ? 'Back to today' : 'Build my plan'} onPress={() => router.replace(profile ? '/today' : '/welcome')} />}>
-      <BackLink label="Today" />
+    <Screen footer={<Button title={profile ? 'Back to Play' : 'Build my plan'} onPress={() => router.replace(profile ? '/play' : '/welcome')} />}>
+      <BackLink />
       <Small>Daily puzzle</Small>
       <Title>{done?.correct ? 'Solved.' : 'Done for today.'}</Title>
       <Gap />
@@ -90,7 +90,7 @@ export default function Daily() {
       ) : null}
       <Gap />
       <Body>A new puzzle arrives tomorrow. Everyone gets the same one.</Body>
-      {done ? <Small style={{ marginTop: space.sm, color: color.brass }}>+3 tokens</Small> : null}
+      {done ? <Small style={{ marginTop: space.sm, color: color.gold }}>+3 Workshop Coins</Small> : null}
     </Screen>
   );
 }
