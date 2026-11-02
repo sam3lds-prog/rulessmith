@@ -9,6 +9,7 @@ import { owned } from '../../rewards/ledger';
 import { useApp } from '../../state/store';
 import { BackLink, Body, Button, Eyebrow, Gap, Label, Plate, Screen, Small, Title } from '../../ui/kit';
 import { space } from '../../ui/theme';
+import { useStart } from '../../ui/useStart';
 import { WorkshopScene } from '../../ui/WorkshopScene';
 import { DISTRICT_BY_ID, itemForMission } from '../../world/catalog';
 
@@ -22,6 +23,7 @@ export default function MissionCard() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const s = useApp();
   const [error, setError] = useState<string | null>(null);
+  const { start: startWith, sheet } = useStart();
   const m = MISSION_BY_ID[id ?? ''];
   if (!m) return <Redirect href="/play" />;
   const chapter = CHAPTER_BY_ID[m.chapterId];
@@ -42,9 +44,13 @@ export default function MissionCard() {
           : `${game?.name}: ${game?.tagline} Guided play: the rule stays on screen.`;
 
   const start = () => {
-    const r = s.startMission(m.id);
-    if (r.ok) router.push('/session');
-    else setError(r.reason === 'locked' ? 'This one opens later.' : 'Every puzzle for this mission is switched off right now. Try another mission.');
+    if (!s.profile) return router.push('/welcome');
+    startWith(
+      () => s.startMission(m.id),
+      (r) => {
+        if (!r.ok) setError(r.reason === 'locked' ? 'This one opens later.' : 'Every puzzle for this mission is switched off right now. Try another mission.');
+      },
+    );
   };
 
   return (
@@ -94,6 +100,7 @@ export default function MissionCard() {
       {st.status === 'done' ? <Small style={{ marginTop: space.md }}>Done. Playing again is good practice; the object is yours already.</Small> : null}
       {error ? <Small style={{ marginTop: space.md }}>{error}</Small> : null}
       <View style={{ height: space.lg }} />
+      {sheet}
     </Screen>
   );
 }

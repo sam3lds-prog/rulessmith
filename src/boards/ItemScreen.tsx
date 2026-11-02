@@ -106,12 +106,14 @@ export function ItemScreen({
   useEffect(report, [draft, hints, ruleRevealed]);
 
   // A tap on the board acknowledges itself at once, the same whatever the answer.
-  const firstDraft = useRef(true);
+  // Boards report their starting draft once when they mount; that isn't a tap, so it stays silent.
+  // So does a draft that hasn't actually changed (a restored puzzle reporting the same work).
+  const lastDraft = useRef<string | null>(null);
   useEffect(() => {
-    if (firstDraft.current) {
-      firstDraft.current = false;
-      return;
-    }
+    const key = JSON.stringify(draft ?? null);
+    const prev = lastDraft.current;
+    lastDraft.current = key;
+    if (prev === null || prev === 'null' || prev === key) return;
     if (!locked) feel('select');
   }, [draft]);
 

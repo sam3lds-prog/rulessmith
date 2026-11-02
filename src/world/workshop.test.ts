@@ -8,7 +8,7 @@ import { newSkillState } from '../engine/mastery';
 import { DAY_MS } from '../engine/time';
 import { CHAPTERS, MISSION_BY_ID, MISSIONS, missionSlots, missionState, nextMission, type Quests } from '../quests/chapters';
 import { drillSlots, heldOutSlots, repairSlots, summarizeCheck } from '../quizzes/policies';
-import { buy, coinBalance, grantOnce, milestoneGrants, owned, projectProgress, weekKey, weeklyProgress, weeklyRewardEntry } from '../rewards/ledger';
+import { buy, coinBalance, grantOnce, milestoneGrants, owned, projectProgress, weekKey, weeklyProgress, weeklyRewardEntry, weeksMet } from '../rewards/ledger';
 import type { TokenEntry } from '../state/types';
 import { mergeSynced, pickSynced } from '../sync/merge';
 import { INITIAL } from '../state/types';
@@ -59,6 +59,11 @@ describe('rewards', () => {
     expect(w.days).toBe(3);
     expect(w.met).toBe(false);
     expect(weeklyRewardEntry(w.week, NOW).id).toBe('weekly:2026-11-02');
+  });
+
+  it('finds every week whose goal was met, including past ones', () => {
+    const days = ['2026-10-19', '2026-10-20', '2026-10-22', '2026-10-25', '2026-10-27', '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05'];
+    expect(weeksMet(days)).toEqual(['2026-10-19', '2026-11-02']);
   });
 });
 
@@ -165,6 +170,17 @@ describe('quizzes', () => {
     expect(s.oneMoreLook[0]).toMatchObject({ skillId: 'div.digit-sum', missed: 1, of: 2 });
     expect(s.oneMoreLook[0].notes[0]).toMatch(/3 and 9 only/);
     expect(s.next).toEqual({ kind: 'repair', skillId: 'div.digit-sum' });
+  });
+
+  it('answers right only with a hint are not "on your own" and need one more look', () => {
+    const s = summarizeCheck([
+      { skillId: 'div.last-digit', templateId: 'a', correct: true, hint: true },
+      { skillId: 'div.last-digit', templateId: 'b', correct: true, hint: false },
+      { skillId: 'div.digit-sum', templateId: 'c', correct: true, hint: false },
+    ]);
+    expect(s).toMatchObject({ correct: 3, unaided: 2, helped: 1, total: 3 });
+    expect(s.canDo).toEqual(['div.digit-sum']);
+    expect(s.oneMoreLook).toEqual([{ skillId: 'div.last-digit', missed: 0, helped: 1, of: 2, notes: [] }]);
   });
 });
 

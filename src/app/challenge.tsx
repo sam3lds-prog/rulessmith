@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { SKILLS, TRACKS } from '../content';
 import { maxLevelFor, ownsChallenge } from '../monetization/entitlements';
 import { useApp } from '../state/store';
+import { useStart } from '../ui/useStart';
 import { BackLink, Body, Button, Chip, Gap, Heading, OptionRow, Plate, Screen, Small, Title } from '../ui/kit';
 import { color, space } from '../ui/theme';
 
@@ -19,6 +20,7 @@ export default function Challenge() {
   const [picked, setPicked] = useState<string[]>([]);
   const [range, setRange] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const { start: startWith, sheet } = useStart();
   const now = Date.now();
   const challenge = ownsChallenge(s.entitlements, now);
 
@@ -29,9 +31,12 @@ export default function Challenge() {
   };
 
   const start = () => {
-    const r = s.startSession('challenge', { skills: picked, levels: RANGES[range].levels });
-    if (r.ok) router.push('/session');
-    else setError(r.reason === 'locked' ? 'That difficulty is part of Premium or the Hardest Levels Challenge pack.' : 'Pick at least one skill.');
+    startWith(
+      () => s.startSession('challenge', { skills: picked, levels: RANGES[range].levels }),
+      (r) => {
+        if (!r.ok) setError(r.reason === 'locked' ? 'That difficulty is part of Premium or the Hardest Levels Challenge pack.' : r.reason === 'no-runs' ? "You've used today's free runs." : 'Pick at least one skill.');
+      },
+    );
   };
 
   return (
@@ -71,6 +76,7 @@ export default function Challenge() {
         </Plate>
       ) : null}
       {error ? <Small style={{ marginTop: space.sm, color: color.wrong }}>{error}</Small> : null}
+      {sheet}
     </Screen>
   );
 }

@@ -84,7 +84,7 @@ npm run build:web    # static site in dist/; deploy to any static host
 
 Copy `.env.example` to `.env`. Everything is optional: with no values the app runs fully on the device, ads stay off, and purchases use the test provider.
 
-- `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`: accounts, sync, the remote kill switch and analytics. Apply `supabase/migrations/` to your project (`supabase db push`; both files, in order), deploy the account-deletion function (`supabase functions deploy delete-account`), and add `{{ .Token }}` to the Magic Link email template so sign-in emails carry a 6-digit code. To switch a puzzle family off for everyone: `insert into public.disabled_templates (template_id, reason) values ('<template id>', '<why>');`. Read analytics with the service role (the app can only write them).
+- `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`: accounts, sync, the remote kill switch and analytics. Apply `supabase/migrations/` to your project (`supabase db push`; all files, in order), deploy the account-deletion function (`supabase functions deploy delete-account`), and add `{{ .Token }}` to the Magic Link email template so sign-in emails carry a 6-digit code. To switch a puzzle family off for everyone: `insert into public.disabled_templates (template_id, reason) values ('<template id>', '<why>');`. Read analytics with the service role (the app can only write them).
 - `EXPO_PUBLIC_ADS_ENABLED`: leave `false` until 4 to 8 weeks after launch.
 - `EXPO_PUBLIC_REVENUECAT_*`: wired in Phase 4 (`docs/MONETIZATION.md`).
 

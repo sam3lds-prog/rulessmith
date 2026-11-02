@@ -109,5 +109,16 @@ export function weeklyProgress(activityDays: Iterable<string>, now: number, targ
   return { week: key, days: days.size, target, met: days.size >= target, daysLeft: 7 - Math.round((now - new Date(`${key}T00:00:00`).getTime()) / DAY_MS) };
 }
 
+/** Every week (by its Monday) with at least `target` learning days. */
+export function weeksMet(activityDays: Iterable<string>, target = WEEKLY_TARGET_DAYS): string[] {
+  const byWeek = new Map<string, Set<string>>();
+  for (const day of activityDays) {
+    const [y, m, dd] = day.split('-').map(Number);
+    const week = weekKey(new Date(y, m - 1, dd, 12).getTime());
+    byWeek.set(week, (byWeek.get(week) ?? new Set()).add(day));
+  }
+  return [...byWeek].filter(([, days]) => days.size >= target).map(([week]) => week).sort();
+}
+
 /** Coin entry for meeting a week's goal; its id makes it once per week, on any number of devices. */
 export const weeklyRewardEntry = (week: string, at: number): TokenEntry => ({ id: `weekly:${week}`, delta: WEEKLY_REWARD, reason: 'weekly', at });

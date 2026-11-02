@@ -49,7 +49,7 @@ import { TOKEN_COSTS, TOKEN_REWARDS } from '../monetization/tokens';
 import { examSkills } from '../exams/blueprints';
 import { MISSION_BY_ID, missionSlots, missionState, missionsDone } from '../quests/chapters';
 import { drillSlots, heldOutSlots, POLICIES, repairSlots, summarizeCheck, type QuizKind } from '../quizzes/policies';
-import { buy, grantOnce, milestoneGrants, weeklyProgress, weeklyRewardEntry } from '../rewards/ledger';
+import { buy, grantOnce, milestoneGrants, weeklyRewardEntry, weeksMet } from '../rewards/ledger';
 import { applyPlacementRun, derived, importGuest, mergeRemote, pickSynced, type Synced } from '../sync/merge';
 import { itemForMission } from '../world/catalog';
 import { clearBucket, createSaver, GUEST, openAtLaunch, OWNER_KEY, readBucket, writeBucket, type KV } from './buckets';
@@ -72,7 +72,8 @@ import {
 
 export type { ActiveSession, AnswerRecord, ContentReport, DailyResult, ItemProgress, Recap, SessionResult } from './types';
 
-export type StartResult = { ok: true } | { ok: false; reason: 'no-runs' | 'locked' | 'empty' | 'no-profile' };
+/** `in-progress`: a session with answers is open; finish or end it first, so its results are never lost. */
+export type StartResult = { ok: true } | { ok: false; reason: 'no-runs' | 'locked' | 'empty' | 'no-profile' | 'in-progress' };
 
 /** What happened when the current puzzle was checked against the kill switch and template versions. */
 export type ServeStatus = 'ok' | 'replaced' | 'ended';
@@ -136,6 +137,8 @@ interface Actions {
   /** The object the learner is working toward (shown on Play and Workshop). */
   chooseProject(itemId: string | undefined): void;
   setFeel(patch: Partial<FeelSettings>): void;
+  /** Pay rewards already earned (weekly goals, mission objects, milestones). Idempotent; runs at launch and after a sync. */
+  settle(): void;
 
   report(item: Item, reason: string): void;
   setPreviewAds(on: boolean): void;
@@ -326,6 +329,7 @@ export const useApp = create<AppState>()((set, get) => {
     const s = get();
     const now = Date.now();
     if (!s.profile) return { ok: false, reason: 'no-profile' };
+    if (s.active?.results.length) return { ok: false, reason: 'in-progress' };
     if (args.slots.length === 0) return { ok: false, reason: 'empty' };
     const runs = freshRuns(s.runs, now);
     const tracks = [...new Set(args.slots.map((x) => SKILL_BY_ID[x.skillId]?.track))].filter(Boolean) as TrackId[];
@@ -374,14 +378,16 @@ export const useApp = create<AppState>()((set, get) => {
     const s = get();
     let grants = s.grants;
     let tokenLedger = s.tokenLedger;
-    const week = weeklyProgress(activityDays(), now);
-    if (week.met && !tokenLedger.some((e) => e.id === `weekly:${week.week}`)) tokenLedger = [...tokenLedger, weeklyRewardEntry(week.week, now)];
-    const weeksMet = tokenLedger.filter((e) => e.reason === 'weekly').length;
+    // Every week whose goal was met pays once, including a past week settled late.
+    for (const week of weeksMet(activityDays())) {
+      if (!tokenLedger.some((e) => e.id === `weekly:${week}`)) tokenLedger = [...tokenLedger, weeklyRewardEntry(week, now)];
+    }
+    const weeklyGoalsMet = tokenLedger.filter((e) => e.reason === 'weekly').length;
     for (const [id, rec] of Object.entries(s.quests)) {
       const item = rec.completedAt ? itemForMission(id) : undefined;
       if (item) grants = grantOnce(grants, item.id, `mission:${id}`, rec.completedAt!);
     }
-    grants = milestoneGrants(grants, missionsDone(s.quests), weeksMet, now);
+    grants = milestoneGrants(grants, missionsDone(s.quests), weeklyGoalsMet, now);
     const newItems = grants.filter((g) => !s.grants.some((x) => x.id === g.id)).map((g) => g.itemId);
     const coins = tokenLedger.filter((e) => !s.tokenLedger.some((x) => x.id === e.id)).reduce((n, e) => n + e.delta, 0);
     if (grants !== s.grants || tokenLedger !== s.tokenLedger) {
@@ -433,6 +439,8 @@ export const useApp = create<AppState>()((set, get) => {
         const { data } = mergeRemote(pickData(get()), { synced: migrateSnapshot(snapshot?.state), attempts: pulled.attempts });
         cursor = pulled.cursor;
         set({ ...data, account: { ...get().account, pullCursor: cursor, loadedAt: get().account.loadedAt ?? Date.now() } });
+        // Another device may have finished the week's fourth day or a mission: pay what is now earned (once).
+        if (get().profile) settleRewards(Date.now());
         newFromServer += get().attempts.length - before;
         return snapshot;
       };
@@ -570,6 +578,7 @@ export const useApp = create<AppState>()((set, get) => {
       const s = get();
       const now = Date.now();
       if (!s.profile && mode !== 'try') return { ok: false, reason: 'no-profile' };
+      if (s.active?.results.length) return { ok: false, reason: 'in-progress' };
       const runs = freshRuns(s.runs, now);
       let slots: Slot[] = [];
       let title = 'Session';
@@ -942,6 +951,7 @@ export const useApp = create<AppState>()((set, get) => {
       // One id per day, so two devices answering the same day earn the tokens once.
       const tokenLedger = [...get().tokenLedger, { id: `daily-${day}`, delta: TOKEN_REWARDS.dailyPuzzle, reason: 'daily' as const, at: Date.now() }];
       set({ daily, tokenLedger, dailyProgress: undefined, ...derived({ daily, tokenLedger, sessionLog: get().sessionLog }) });
+      settleRewards(Date.now());
       track('daily_answered', { correct: r.correct, hints: r.hintsUsed });
       void get().syncNow();
     },
@@ -1003,6 +1013,10 @@ export const useApp = create<AppState>()((set, get) => {
     },
 
     setFeel: (patch) => set({ settings: { ...get().settings, ...patch } }),
+
+    settle: () => {
+      if (get().profile) settleRewards(Date.now());
+    },
 
     report: (item, reason) => {
       const s = get();
@@ -1152,6 +1166,8 @@ export async function bootstrapStore() {
   const s = useApp.getState();
   setAnalyticsContext({ ageBand: s.profile?.ageBand, userId: opened.owner === GUEST ? undefined : opened.owner });
   useApp.subscribe(() => saver.schedule());
+  // Pay anything earned but not yet paid (a past week's goal, say); saved like any other change.
+  useApp.getState().settle();
   void startAnalytics();
 
   RNAppState.addEventListener('change', (st) => {

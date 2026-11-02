@@ -12,6 +12,7 @@ import { MISSIONS } from '../../quests/chapters';
 import { useApp, type StartResult } from '../../state/store';
 import { BackLink, Body, Button, Eyebrow, Gap, Heading, Label, LinkRow, Plate, Screen, Small, Stamp, Title } from '../../ui/kit';
 import { color, font, space, type } from '../../ui/theme';
+import { useStart } from '../../ui/useStart';
 import { districtForTrack } from '../../world/catalog';
 
 /** One static page per skill in the web export. */
@@ -24,6 +25,7 @@ export default function SkillDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const s = useApp();
   const [blocked, setBlocked] = useState(false);
+  const { start: startWith, sheet } = useStart();
   const skill = SKILL_BY_ID[id ?? ''];
   const example = useMemo(() => {
     if (!skill) return undefined;
@@ -48,13 +50,10 @@ export default function SkillDetail() {
   const ownWay = mine.filter((a) => a.support === 'independent' && !a.hintBeforeAnswer);
   const ownRight = ownWay.filter((a) => a.correct).length;
 
-  const go = (r: StartResult) => {
-    if (r.ok) router.push('/session');
-    else if (r.reason === 'no-runs') setBlocked(true);
-  };
+  const go = (run: () => StartResult) => startWith(run, (r) => setBlocked(!r.ok && r.reason === 'no-runs'));
   const start = (mode: 'skill' | 'ladder') => {
     if (!s.profile) return router.push('/welcome');
-    go(s.startSession(mode, { skillId: skill.id }));
+    go(() => s.startSession(mode, { skillId: skill.id }));
   };
 
   return (
@@ -62,7 +61,7 @@ export default function SkillDetail() {
       footer={
         <>
           <Button title="Practise this skill" onPress={() => start('skill')} />
-          <Button title="Take a concept check" kind="secondary" onPress={() => (s.profile ? go(s.startQuiz('check', { skills: [skill.id] })) : router.push('/welcome'))} />
+          <Button title="Take a concept check" kind="secondary" onPress={() => (s.profile ? go(() => s.startQuiz('check', { skills: [skill.id] })) : router.push('/welcome'))} />
         </>
       }
     >
@@ -160,6 +159,7 @@ export default function SkillDetail() {
         </Plate>
       ) : null}
       <View style={{ height: space.lg }} />
+      {sheet}
     </Screen>
   );
 }

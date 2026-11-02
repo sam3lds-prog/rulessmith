@@ -15,6 +15,7 @@ import { adsLive, useApp } from '../../state/store';
 import { AppHeader } from '../../ui/AppHeader';
 import { Chip, Eyebrow, Gap, Heading, Label, LinkRow, Micro, Plate, Screen, Small, Stamp, Title } from '../../ui/kit';
 import { PlanView } from '../../ui/PlanView';
+import { useStart } from '../../ui/useStart';
 import { color, font, radius, space, type } from '../../ui/theme';
 import { DISTRICTS, type District } from '../../world/catalog';
 
@@ -29,6 +30,7 @@ const DOMAIN_STATUS: Record<ExamDomain['status'], { label: string; fg: string; b
 export default function Plan() {
   const s = useApp();
   const [view, setView] = useState<'map' | 'outline'>('map');
+  const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
   if (!s.plan) return <Redirect href="/onboarding/placement" />;
 
@@ -171,12 +173,11 @@ export default function Plan() {
             <LinkRow
               title="Recall due"
               detail={`${[...due].map((id) => SKILL_BY_ID[id]?.name).join(', ')}. A short check with the rule hidden.`}
-              onPress={() => {
-                if (s.startQuiz('recall').ok) router.push('/session');
-              }}
+              onPress={() => start(() => s.startQuiz('recall'))}
             />
           </>
         ) : null}
+        {sheet}
       </Screen>
       {banner ? <BannerSlot /> : null}
     </View>

@@ -93,7 +93,7 @@ The `disabled_templates` table lists switched-off template ids. The app reads it
 
 | Table | Written by | Purpose |
 | --- | --- | --- |
-| `learner_state` | the app | Snapshot of profile, plan, ledgers, missions, workshop objects and check results (`v: 3`), merged before every push |
+| `learner_state` | the app | Snapshot of profile, plan, ledgers, missions, workshop objects and check results (`v: 3`), merged before every push. A trigger refuses an update that lowers `v`, so an older app can't drop newer keys |
 | `attempts` | the app | The learning record: every answer with its response, versions and support, keyed by `(user_id, attempt_id)`; `received_at` is the pull cursor |
 | `content_reports` | the app | "Report a problem", keyed by `(user_id, report_id)`, with item id and content version |
 | `events` | the app, via `log_events()` only | Analytics. The app can't read it |
@@ -118,10 +118,12 @@ The redesign from the *Illustrated Game and Learning Guide* wraps the learning e
 | `games/registry.ts` | The five game skins and which board each one wraps: Number Gates (sort), Number Forge (construct), Rule Breaker (refute), Factor Factory (factor) and Remainder Rails (rail). Choice and numeric items are "quick questions". A skin changes the frame, labels and guided note, never the item or how it is graded. |
 | `quests/chapters.ts` | Chapters and missions. "Light the Gatehouse" has six: three games, a concept check, a transfer mission and a recall a day after the check. Factor Foundry and Clockwork Harbor have a game and a check each. A mission's steps name templates and levels, so its puzzles are generated and checked like any other. A mission completes only when every slot is answered and the session wasn't ended early. |
 | `quizzes/policies.ts` | Concept check (5 items, independent, results at the end), mixed exam drill (12, uses a run), recall (3), repair (3, guided). Checks avoid families played in missions or repairs in the last day (where possible), mix board types and include a transfer item. `summarizeCheck` gives what you can do, what needs one more look (with misconception notes) and what to play next. |
-| `rewards/ledger.ts` | Workshop objects are grants with stable ids (`item:<id>`), so a reward is given once however often a recap, reload or sync replays it. Buying spends coins once (`buy:<id>`). The weekly goal is 4 learning days in a Monday-to-Sunday week; it pays 10 coins once per week (`weekly:<monday>`). |
+| `rewards/ledger.ts` | Workshop objects are grants with stable ids (`item:<id>`), so a reward is given once however often a recap, reload or sync replays it. Buying spends coins once (`buy:<id>`). The weekly goal is 4 learning days in a Monday-to-Sunday week; it pays 10 coins once per week (`weekly:<monday>`). Rewards are settled after a session, a daily puzzle, a sync and at launch, so a week finished by a daily puzzle or on another device still pays. Known limit: two offline devices can each buy an object with the same coins; after they sync the balance can dip below zero (shown as 0) until new coins cover it. |
 | `world/catalog.ts` | Districts (three released, five planned) and the 18 workshop objects with how each is earned. Versioned. |
 | `exams/blueprints.ts` | Each exam's official math domains with a source link and the date it was checked, which domains the app covers (foundations, planned, not covered) and an honest coverage line ("X of N released skills secure"). Not a score prediction. |
 | `feel/events.ts`, `feel/director.ts` | One table of feedback events (select, place, submit, correct, incorrect, mission complete, project reveal, recall success) with their sound, haptic and visual length. The director plays them, respecting the learner's sound, vibration, reduce-motion and Focus settings and the phone's silent switch. |
+
+**A session with answers is never replaced.** Starting a mission, check or session while one with answers is open is refused (`in-progress`); the screens ask to resume it or end it first (`ui/useStart.tsx`).
 
 **Checks never leak the answer early.** In a check (`feedback: 'after-set'`) a board gets no result until the set is over: no verdict text, no right or wrong colours, a neutral progress bar, a companion that stays curious, and only the neutral submit sound. The end-of-check screen then shows every answer with its explanation.
 

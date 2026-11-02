@@ -63,8 +63,10 @@ export default function Session() {
 
   const end = () => {
     if (active.results.length > 0) {
-      // Ending a ladder at its third miss is a normal finish; anything else stopped early.
-      const early = !(ladder && ladder.misses >= LADDER_MISSES);
+      // A normal finish: a ladder ended at its third miss, or every puzzle answered (End tapped
+      // instead of "See my results"). Anything else stopped early.
+      const allAnswered = total !== undefined && active.results.length >= total;
+      const early = !(ladder && ladder.misses >= LADDER_MISSES) && !allAnswered;
       finish({ early });
       router.replace('/recap');
     } else {

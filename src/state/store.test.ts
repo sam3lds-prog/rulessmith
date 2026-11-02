@@ -797,6 +797,44 @@ describe('the workshop loop', () => {
     expect(s.grants.some((g) => g.itemId === 'weekly-ribbon')).toBe(true);
   });
 
+  it('a session with answers is never silently replaced', async () => {
+    const m = await launch();
+    onboard(m);
+    m.useApp.getState().startMission('gate-1');
+    // Nothing answered yet, so starting something else simply replaces it.
+    expect(m.useApp.getState().startMission('forge-9').ok).toBe(true);
+    answer(m);
+    expect(m.useApp.getState().startQuiz('check')).toEqual({ ok: false, reason: 'in-progress' });
+    expect(m.useApp.getState().startMission('gate-1')).toEqual({ ok: false, reason: 'in-progress' });
+    expect(m.useApp.getState().startSession('journey')).toEqual({ ok: false, reason: 'in-progress' });
+    expect(m.useApp.getState().active!.missionId).toBe('forge-9');
+    expect(m.useApp.getState().active!.results).toHaveLength(1);
+  });
+
+  it("a week's goal pays at the next launch, even if no session was finished that week", async () => {
+    let m = await launch();
+    onboard(m);
+    const real = Date.now;
+    const monday = new Date(2026, 10, 9, 10).getTime();
+    try {
+      for (let d = 0; d < 4; d++) {
+        Date.now = () => monday + d * 86400000;
+        m.useApp.getState().startMission('gate-1');
+        answer(m);
+        m.useApp.getState().abandonSession();
+      }
+    } finally {
+      Date.now = real;
+    }
+    expect(m.useApp.getState().tokenLedger.some((e) => e.reason === 'weekly')).toBe(false);
+    await m.flushSaves();
+    m = await launch();
+    expect(m.useApp.getState().tokenLedger.filter((e) => e.id === 'weekly:2026-11-09')).toHaveLength(1);
+    expect(m.useApp.getState().grants.some((g) => g.itemId === 'weekly-ribbon')).toBe(true);
+    m = await launch();
+    expect(m.useApp.getState().tokenLedger.filter((e) => e.reason === 'weekly')).toHaveLength(1);
+  });
+
   it('missions and objects sync between devices without granting twice', async () => {
     const m = await launch();
     onboard(m);

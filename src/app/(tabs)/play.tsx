@@ -16,6 +16,7 @@ import { projectProgress, weeklyProgress } from '../../rewards/ledger';
 import { adsLive, useApp } from '../../state/store';
 import { AppHeader } from '../../ui/AppHeader';
 import { Companion } from '../../ui/Companion';
+import { useStart } from '../../ui/useStart';
 import { Button, Eyebrow, Gap, Heading, Label, LinkRow, Micro, Plate, Screen, Small } from '../../ui/kit';
 import { color, font, radius, space, type } from '../../ui/theme';
 import { ITEM_BY_ID } from '../../world/catalog';
@@ -23,6 +24,7 @@ import { ITEM_BY_ID } from '../../world/catalog';
 export default function Play() {
   const s = useApp();
   const [blocked, setBlocked] = useState<null | 'no-runs' | 'empty'>(null);
+  const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
   if (!s.plan) return <Redirect href="/onboarding/placement" />;
 
@@ -60,23 +62,15 @@ export default function Play() {
   const runsLeft = s.runsLeft();
   const rewardedOk = canOfferRewarded({ adsEnabled: adsLive(s), ageBand: s.profile.ageBand, premium });
 
-  const playMission = (m: Mission) => {
-    const r = s.startMission(m.id);
-    if (r.ok) router.push('/session');
-    else router.push(`/mission/${m.id}`);
-  };
-  const playNext = () => {
-    if (next) return playMission(next);
-    const r = s.startQuiz('check', {});
-    if (r.ok) router.push('/session');
-  };
-  const startPlanSession = () => {
-    const r = s.startSession('journey');
-    if (r.ok) {
-      setBlocked(null);
-      router.push('/session');
-    } else if (r.reason === 'no-runs' || r.reason === 'empty') setBlocked(r.reason);
-  };
+  const playMission = (m: Mission) => start(() => s.startMission(m.id), () => router.push(`/mission/${m.id}`));
+  const playNext = () => (next ? playMission(next) : start(() => s.startQuiz('check', {})));
+  const startPlanSession = () =>
+    start(
+      () => s.startSession('journey'),
+      (r) => {
+        if (!r.ok && (r.reason === 'no-runs' || r.reason === 'empty')) setBlocked(r.reason);
+      },
+    );
 
   return (
     <Screen>
@@ -113,7 +107,7 @@ export default function Play() {
       <Small>{chapter.blurb}</Small>
       <View style={{ marginTop: space.sm }}>
         {chapter.missions.map((m, i) => (
-          <TrailRow key={m.id} mission={m} current={next?.id === m.id} last={i === chapter.missions.length - 1} />
+          trailRow(m, next?.id === m.id, i === chapter.missions.length - 1)
         ))}
         {CHAPTERS.filter((c) => c.id !== chapter.id).map((c) => (
           <Pressable key={c.id} accessibilityRole="button" onPress={() => router.push(`/mission/${c.missions[0].id}`)} style={styles.trailRow}>
@@ -170,9 +164,7 @@ export default function Play() {
         detail={due.length ? `${due.length} secured skill${due.length === 1 ? '' : 's'} to keep fresh: ${due.slice(0, 2).map((id) => SKILL_BY_ID[id]?.name).join(', ')}` : 'Nothing due. Secured skills come back at 1, 3, 7 and 21 days.'}
         onPress={
           due.length
-            ? () => {
-                if (s.startQuiz('recall').ok) router.push('/session');
-              }
+            ? () => start(() => s.startQuiz('recall'))
             : undefined
         }
       />
@@ -213,10 +205,12 @@ export default function Play() {
         </Plate>
       ) : null}
       {blocked === 'empty' ? <Small style={{ marginTop: space.sm }}>Nothing to practise right now.</Small> : null}
+      {sheet}
     </Screen>
   );
 
-  function TrailRow({ mission, current, last }: { mission: Mission; current: boolean; last: boolean }) {
+  // A plain function (not a nested component), so store updates don't remount the rows.
+  function trailRow(mission: Mission, current: boolean, last: boolean) {
     const st = missionState(mission, s.quests, now);
     const detail =
       st.status === 'done'
@@ -236,6 +230,7 @@ export default function Play() {
             : 'Open any time';
     return (
       <Pressable
+        key={mission.id}
         accessibilityRole="button"
         accessibilityLabel={`${mission.title}. ${detail}`}
         onPress={() => router.push(`/mission/${mission.id}`)}

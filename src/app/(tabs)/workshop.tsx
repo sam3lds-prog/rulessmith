@@ -12,6 +12,7 @@ import { useApp } from '../../state/store';
 import { AppHeader } from '../../ui/AppHeader';
 import { Button, CoinBadge, Eyebrow, Gap, Heading, Label, Micro, Plate, Screen, Small, Title } from '../../ui/kit';
 import { color, font, radius, space, type } from '../../ui/theme';
+import { useStart } from '../../ui/useStart';
 import { WorkshopScene } from '../../ui/WorkshopScene';
 import { earnText, ITEMS, type WorkshopItem } from '../../world/catalog';
 
@@ -24,6 +25,7 @@ const GROUPS: { title: string; note: string; match: (i: WorkshopItem) => boolean
 export default function Workshop() {
   const s = useApp();
   const [justBought, setJustBought] = useState<string | null>(null);
+  const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
 
   const now = Date.now();
@@ -74,10 +76,7 @@ export default function Workshop() {
           <Gap h={space.md} />
           <Button
             title={`Play the next discovery: ${next.title}`}
-            onPress={() => {
-              if (s.startMission(next.id).ok) router.push('/session');
-              else router.push(`/mission/${next.id}`);
-            }}
+            onPress={() => start(() => s.startMission(next.id), () => router.push(`/mission/${next.id}`))}
           />
         </>
       ) : null}
@@ -107,13 +106,15 @@ export default function Workshop() {
                   <Text style={type.label}>{i.name}</Text>
                   <Small>{have ? i.blurb : m ? `Finish “${m.title}”.` : earnText(i)}</Small>
                   {justBought === i.id ? <Micro style={{ color: color.right }}>Added to your workshop.</Micro> : null}
+                  {!have && i.earn.kind === 'coins' && coins < cost ? <Micro>Earn {cost - coins} more coins to buy it.</Micro> : null}
                   {!have ? (
                     <View style={styles.itemActions}>
                       {i.earn.kind === 'coins' ? (
                         <Button
-                          title={coins >= cost ? `Buy for ${cost} coins` : `${cost} coins`}
+                          title={`Buy for ${cost} coins`}
                           kind="secondary"
                           disabled={coins < cost}
+                          accessibilityHint={coins < cost ? `You have ${coins} Workshop Coins.` : undefined}
                           onPress={() => {
                             if (s.buyItem(i.id)) {
                               feel('projectReveal');
@@ -149,9 +150,10 @@ export default function Workshop() {
             </View>
           ))
         ) : (
-          <Small style={{ color: color.inkSoft }}>No seals yet. Your first comes from a concept check and a recall a day or more later.</Small>
+          <Small style={{ color: color.inkSoft }}>No seals yet. Concept checks, recall and any practice with the rule hidden all count toward one.</Small>
         )}
       </View>
+      {sheet}
     </Screen>
   );
 }
@@ -165,8 +167,8 @@ const styles = StyleSheet.create({
   itemIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: color.paperDeep, alignItems: 'center', justifyContent: 'center' },
   iconOwned: { backgroundColor: color.actionWash },
   itemActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.sm, marginTop: space.xs },
-  smallButton: { minHeight: 40, paddingHorizontal: space.md },
-  quietButton: { minHeight: 40, paddingHorizontal: 0 },
+  smallButton: { minHeight: 44, paddingHorizontal: space.md },
+  quietButton: { minHeight: 44, paddingHorizontal: 0 },
   seals: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.md },
   seal: { width: 104, minHeight: 84, borderRadius: radius.md, backgroundColor: color.goldWash, alignItems: 'center', justifyContent: 'center', padding: space.sm, gap: 4 },
 });

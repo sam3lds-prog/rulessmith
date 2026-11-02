@@ -146,11 +146,15 @@ export interface CheckAnswer {
 
 export interface CheckSummary {
   correct: number;
+  /** Right with no hint and the rule hidden: what "on your own" means everywhere else. */
+  unaided: number;
+  /** Right, but after a hint or revealing the rule. */
+  helped: number;
   total: number;
-  /** "What can I do?" Skills answered right every time. */
+  /** "What can I do?" Skills answered right every time, on your own. */
   canDo: string[];
-  /** "What needs one more look?" */
-  oneMoreLook: { skillId: string; missed: number; of: number; notes: string[] }[];
+  /** "What needs one more look?" Missed, or right only with help. */
+  oneMoreLook: { skillId: string; missed: number; helped: number; of: number; notes: string[] }[];
   /** "What should I play next?" */
   next: { kind: 'repair'; skillId: string } | { kind: 'continue' };
 }
@@ -162,15 +166,19 @@ export function summarizeCheck(answers: CheckAnswer[]): CheckSummary {
   const oneMoreLook: CheckSummary['oneMoreLook'] = [];
   for (const [skillId, list] of bySkill) {
     const missed = list.filter((a) => !a.correct).length;
-    if (missed === 0) canDo.push(skillId);
+    const helped = list.filter((a) => a.correct && a.hint).length;
+    if (missed === 0 && helped === 0) canDo.push(skillId);
     else {
       const notes = [...new Set(list.filter((a) => !a.correct && a.misconception).map((a) => MISCONCEPTION_NOTES[a.misconception!]).filter(Boolean))] as string[];
-      oneMoreLook.push({ skillId, missed, of: list.length, notes });
+      oneMoreLook.push({ skillId, missed, helped, of: list.length, notes });
     }
   }
-  oneMoreLook.sort((a, b) => b.missed / b.of - a.missed / a.of);
+  // Misses first, then answers that needed help.
+  oneMoreLook.sort((a, b) => b.missed / b.of - a.missed / a.of || b.helped / b.of - a.helped / a.of);
   return {
     correct: answers.filter((a) => a.correct).length,
+    unaided: answers.filter((a) => a.correct && !a.hint).length,
+    helped: answers.filter((a) => a.correct && a.hint).length,
     total: answers.length,
     canDo,
     oneMoreLook,

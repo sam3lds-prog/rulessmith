@@ -124,7 +124,7 @@ export default function RecapScreen() {
       ) : null}
 
       {r.check ? (
-        <CheckResults />
+        checkResults()
       ) : (
         <>
           <Small>{r.title}</Small>
@@ -183,20 +183,26 @@ export default function RecapScreen() {
     </Screen>
   );
 
-  function CheckResults() {
+  // Called as a function, not rendered as a component, so a store update doesn't remount it
+  // (which would drop screen-reader focus on the review toggle).
+  function checkResults() {
     const c = r!.check!;
+    const unaided = c.unaided ?? c.correct;
+    const helped = c.helped ?? 0;
     return (
       <>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
           <View style={{ flex: 1 }}>
             <Eyebrow>{r!.quiz === 'drill' ? 'Mixed exam drill' : r!.quiz === 'recall' ? 'Recall check' : 'Concept check'}</Eyebrow>
             <Title style={{ marginTop: space.xs }}>
-              {c.correct} of {c.total} on your own
+              {unaided} of {c.total} on your own
             </Title>
           </View>
-          <Companion mood={c.correct === c.total ? 'celebrating' : 'calm'} size={56} />
+          <Companion mood={unaided === c.total ? 'celebrating' : 'calm'} size={56} />
         </View>
-        <Small style={{ marginTop: space.xs }}>Each first answer counts once. A check is evidence, not a final verdict: Secure needs answers across days and puzzle types.</Small>
+        <Small style={{ marginTop: space.xs }}>
+          {helped ? `${helped} more right with a hint or the rule shown. ` : ''}Each first answer counts once. A check is evidence, not a final verdict: Secure needs answers across days and puzzle types.
+        </Small>
         <Gap h={space.lg} />
         <Plate>
           <Heading style={{ fontSize: 18 }}>What can I do?</Heading>
@@ -207,7 +213,7 @@ export default function RecapScreen() {
             c.oneMoreLook.map((x) => (
               <View key={x.skillId} style={{ gap: 2 }}>
                 <Body style={{ fontSize: 16 }}>
-                  {skillName(x.skillId)}: {x.missed} of {x.of} missed.
+                  {skillName(x.skillId)}: {x.missed ? `${x.missed} of ${x.of} missed` : `right, but with help on ${x.helped ?? 0} of ${x.of}`}.
                 </Body>
                 {x.notes.map((n) => (
                   <Small key={n}>{n}</Small>

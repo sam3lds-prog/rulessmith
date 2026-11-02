@@ -14,6 +14,7 @@ import { CHAPTERS, chapterProgress, missionState } from '../../quests/chapters';
 import { MISCONCEPTION_NOTES } from '../../quizzes/policies';
 import { adsLive, useApp, type StartResult } from '../../state/store';
 import { AppHeader } from '../../ui/AppHeader';
+import { useStart } from '../../ui/useStart';
 import { Button, Chip, Eyebrow, Gap, Heading, Label, LinkRow, Plate, Screen, Small, Stamp, Title } from '../../ui/kit';
 import { color, space } from '../../ui/theme';
 
@@ -25,6 +26,7 @@ export default function Practice() {
   const targets = s.plan ? todaysTargets(s.plan, s.skills, now) : [];
   const [track, setTrack] = useState<TrackId>(() => (targets[0] ? SKILL_BY_ID[targets[0]].track : RELEASED[0].id));
   const [blocked, setBlocked] = useState(false);
+  const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
 
   const premium = isPremium(s.entitlements, now);
@@ -47,12 +49,7 @@ export default function Practice() {
   }
   const repairs = [...latest.entries()].filter(([, v]) => v.missed > 0).slice(0, 3);
 
-  const go = (r: StartResult) => {
-    if (r.ok) {
-      setBlocked(false);
-      router.push('/session');
-    } else if (r.reason === 'no-runs') setBlocked(true);
-  };
+  const go = (run: () => StartResult) => start(run, (r) => setBlocked(!r.ok && r.reason === 'no-runs'));
 
   return (
     <View style={{ flex: 1 }}>
@@ -72,7 +69,7 @@ export default function Practice() {
           </View>
           <Button
             title="Start the concept check"
-            onPress={() => go(s.startQuiz('check', { skills: SKILLS.filter((k) => k.track === track).map((k) => k.id) }))}
+            onPress={() => go(() => s.startQuiz('check', { skills: SKILLS.filter((k) => k.track === track).map((k) => k.id) }))}
           />
         </Plate>
 
@@ -86,7 +83,7 @@ export default function Practice() {
                 key={id}
                 title={`Repair: ${SKILL_BY_ID[id]?.name}`}
                 detail={v.notes[0] ?? `${v.missed} missed last time.`}
-                onPress={() => go(s.startQuiz('repair', { skillId: id }))}
+                onPress={() => go(() => s.startQuiz('repair', { skillId: id }))}
               />
             ))}
           </>
@@ -97,12 +94,12 @@ export default function Practice() {
         <LinkRow
           title="Mixed exam drill"
           detail={`12 questions across ${examName}, weighted to what the exam asks most. Uses one free run.`}
-          onPress={() => go(s.startQuiz('drill'))}
+          onPress={() => go(() => s.startQuiz('drill'))}
         />
         <LinkRow
           title="Recall due"
           detail={due.length ? `${due.map((id) => SKILL_BY_ID[id]?.name).join(', ')}. Three quick questions.` : 'Nothing due. Secured skills come back at 1, 3, 7 and 21 days.'}
-          onPress={due.length ? () => go(s.startQuiz('recall')) : undefined}
+          onPress={due.length ? () => go(() => s.startQuiz('recall')) : undefined}
         />
         {blocked ? (
           <Plate tone="warm" style={{ marginTop: space.sm }}>
@@ -156,6 +153,7 @@ export default function Practice() {
             ))}
           </View>
         ))}
+        {sheet}
       </Screen>
       {banner ? <BannerSlot /> : null}
     </View>

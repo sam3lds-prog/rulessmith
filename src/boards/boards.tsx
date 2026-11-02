@@ -276,7 +276,7 @@ export function RefuteBoard({ payload, locked, result, onChange, initialDraft, o
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E'];
 
-export function ChoiceBoard({ payload, locked, onChange, initialDraft, onDraft }: BoardProps<ChoicePayload>) {
+export function ChoiceBoard({ payload, locked, result, onChange, initialDraft, onDraft }: BoardProps<ChoicePayload>) {
   const [sel, setSel] = useState<string | null>(() =>
     initialDraft?.kind === 'choice' && payload.options.some((o) => o.id === initialDraft.sel) ? initialDraft.sel : null,
   );
@@ -288,8 +288,11 @@ export function ChoiceBoard({ payload, locked, onChange, initialDraft, onDraft }
     <View style={{ gap: space.sm }} accessibilityRole="radiogroup">
       {payload.options.map((o, i) => {
         const chosen = sel === o.id;
-        const right = locked && optionIsCorrect(payload, o);
-        const wrong = locked && chosen && !right;
+        // Judged only when a result is shown; in a check the choice stays plainly selected until the end.
+        const judged = locked && !!result;
+        const right = judged && optionIsCorrect(payload, o);
+        const wrong = judged && chosen && !right;
+        const plainSelected = chosen && !judged;
         return (
           <Pressable
             key={o.id}
@@ -298,14 +301,14 @@ export function ChoiceBoard({ payload, locked, onChange, initialDraft, onDraft }
             onPress={locked ? undefined : () => setSel(o.id)}
             style={({ pressed }) => [
               styles.option,
-              chosen && !locked && styles.optionOn,
+              plainSelected && styles.optionOn,
               right && styles.optionRight,
               wrong && styles.optionWrong,
               pressed && !locked && { opacity: 0.85 },
             ]}
           >
-            <View style={[styles.letter, chosen && !locked && { backgroundColor: color.action, borderColor: color.action }]}>
-              <Text style={[type.label, { color: chosen && !locked ? color.white : color.inkSoft }]}>{LETTERS[i]}</Text>
+            <View style={[styles.letter, plainSelected && { backgroundColor: color.action, borderColor: color.action }]}>
+              <Text style={[type.label, { color: plainSelected ? color.white : color.inkSoft }]}>{LETTERS[i]}</Text>
             </View>
             <Text style={[type.body, { flex: 1, fontFamily: font.bodyBold, fontVariant: ['tabular-nums'] }]}>{o.label}</Text>
             {right ? <Text style={[type.heading, { color: color.right }]}>✓</Text> : null}
@@ -426,7 +429,7 @@ const styles = StyleSheet.create({
   splitRow: { flexDirection: 'row', gap: 8, alignItems: 'stretch' },
   ring: { borderWidth: 6, borderColor: color.paperDeep, backgroundColor: color.surface, position: 'relative' },
   ringCenter: { position: 'absolute', left: 60, right: 60, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' },
-  stop: { position: 'absolute', width: 60, alignItems: 'center' },
+  stop: { position: 'absolute', alignItems: 'center' },
 });
 
 // ================================================================ factor (Factor Factory)
@@ -478,7 +481,9 @@ export function FactorBoard({
   const [splits, setSplits] = useState<{ path: string; d: number }[]>(() => (initialDraft?.kind === 'factor' ? initialDraft.splits : []));
   const tree = useMemo(() => buildTree(payload.n, splits), [payload.n, splits]);
   const leaves = leavesOf(tree);
-  const [sel, setSel] = useState<string>(() => leaves.find((l) => !isPrimeSmallInt(l.value))?.path ?? '');
+  // Guided play moves the selection to the next piece that can split. In a check nothing may say
+  // which pieces are prime, so the selection never depends on primality there.
+  const [sel, setSel] = useState<string>(() => (guided ? (leaves.find((l) => !isPrimeSmallInt(l.value))?.path ?? '') : (leaves[leaves.length - 1]?.path ?? '')));
   const [typed, setTyped] = useState('');
   const [note, setNote] = useState<string | null>(null);
   const selected = leaves.find((l) => l.path === sel) ?? leaves[0];
@@ -498,8 +503,10 @@ export function FactorBoard({
     setTyped('');
     const next = [...splits, { path: selected.path, d }];
     setSplits(next);
-    const nextLeaves = leavesOf(buildTree(payload.n, next));
-    setSel(nextLeaves.find((l) => !isPrimeSmallInt(l.value))?.path ?? nextLeaves[0].path);
+    if (guided) {
+      const nextLeaves = leavesOf(buildTree(payload.n, next));
+      setSel(nextLeaves.find((l) => !isPrimeSmallInt(l.value))?.path ?? nextLeaves[0].path);
+    } else setSel(`${selected.path}b`); // the co-factor just made, whatever it is
   };
   const undo = () => {
     if (locked || !splits.length) return;
@@ -594,8 +601,10 @@ export function RailBoard({
   }, [stop]);
 
   const n = payload.stops.length;
-  const size = 280;
-  const radius = size / 2 - 34;
+  // Long loops get narrower stops and a ring wide enough that neighbours never overlap.
+  const tileW = n > 8 ? 48 : 60;
+  const radius = Math.max(106, (tileW + 8) / (2 * Math.sin(Math.PI / n)));
+  const size = Math.round(2 * (radius + tileW / 2 + 4));
   const grouping = (() => {
     const spec = payload.spec;
     if (spec.op === 'remainder') {
@@ -625,8 +634,8 @@ export function RailBoard({
           const on = stop === i;
           const state = locked && on ? (result?.correct ? 'right' : result ? 'wrong' : 'selected') : on ? 'selected' : 'idle';
           return (
-            <View key={i} style={[styles.stop, { left: x - 30, top: y - 24 }]}>
-              <Tile label={st.label} size="sm" minWidth={60} state={state} onPress={locked ? undefined : () => setStop(on ? null : i)} accessibilityLabel={`Stop ${st.label}`} />
+            <View key={i} style={[styles.stop, { left: x - tileW / 2, top: y - 24, width: tileW }]}>
+              <Tile label={st.label} size="sm" minWidth={tileW} state={state} onPress={locked ? undefined : () => setStop(on ? null : i)} accessibilityLabel={`Stop ${st.label}`} />
             </View>
           );
         })}
