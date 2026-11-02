@@ -18,7 +18,8 @@ export default function Progress() {
   const banner = shouldShowBanner('progress', { adsEnabled: adsLive(s), ageBand: s.profile?.ageBand, premium: isPremium(s.entitlements, now) });
   const counts = Object.fromEntries(ORDER.map((st) => [st, SKILLS.filter((k) => displayStatus(s.skills[k.id], now) === st).length])) as Record<DisplayStatus, number>;
   const recent = s.attempts.slice(-50);
-  const unaided = recent.filter((a) => !a.hintBeforeAnswer);
+  // Only answers given on their own (rule hidden, no hints) say what the learner can do unaided.
+  const unaided = recent.filter((a) => a.support === 'independent' && !a.hintBeforeAnswer);
   const accuracy = unaided.length ? Math.round((100 * unaided.filter((a) => a.correct).length) / unaided.length) : null;
   const total = SKILLS.length;
 
@@ -48,8 +49,10 @@ export default function Progress() {
         <Gap h={space.sm} />
         <Small>
           {accuracy === null
-            ? 'Finish a session to see your accuracy here.'
-            : `${accuracy}% right on your last ${unaided.length} unaided answers. ${s.sessionsCompleted} session${s.sessionsCompleted === 1 ? '' : 's'} finished, ${s.streak.count}-day streak.`}
+            ? recent.length
+              ? 'So far you have practised with the rule on screen. Your accuracy shows here once you answer puzzles on your own.'
+              : 'Finish a session to see your accuracy here.'
+            : `${accuracy}% right on your last ${unaided.length} answers on your own. ${s.sessionsCompleted} session${s.sessionsCompleted === 1 ? '' : 's'} finished, ${s.streak.count}-day streak.`}
         </Small>
         {s.checkpoints.length ? (
           <Small style={{ marginTop: space.xs }}>
@@ -77,7 +80,7 @@ export default function Progress() {
           );
         })}
         <Gap />
-        <Small>Secure means 8 of your last 10 unaided answers were right, across 3 puzzle types, on 2 different days, including one unfamiliar problem. Speed is tracked separately.</Small>
+        <Small>Secure means 8 of your last 10 answers on your own (rule hidden, no hints) were right, across 3 puzzle types, on 2 different days, including one unfamiliar problem. Practice with the rule on screen moves a skill to Practicing, not Secure. Speed is tracked separately.</Small>
         {Object.keys(s.ladderBest).length ? (
           <>
             <Gap h={space.xl} />
