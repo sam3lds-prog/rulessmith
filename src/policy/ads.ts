@@ -34,7 +34,7 @@ export function shouldShowSessionBreakAd(c: SessionBreakContext): boolean {
 export type BrowseScreen = 'plan' | 'practice';
 /**
  * Banners only on the Plan and Practice browse screens: never on the puzzle
- * board, the explanation, the recap, Play or the Workshop.
+ * board, the explanation, the recap, Today or Progress.
  */
 const BANNER_SCREENS: BrowseScreen[] = ['plan', 'practice'];
 

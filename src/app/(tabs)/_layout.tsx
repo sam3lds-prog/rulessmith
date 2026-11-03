@@ -9,7 +9,7 @@ const icon =
   (name: IconName) =>
   ({ color: c }: { color: unknown }) => <Feather name={name} size={22} color={c as string} />;
 
-/** Four destinations: Play (the next quest), Plan (the exam map), Practice (checks and drills), Workshop (what you've made). */
+/** Four destinations: Today (the next useful step), My plan, Practice (topics, games, checks, mistakes) and Progress. */
 export default function TabsLayout() {
   return (
     <Tabs
@@ -28,10 +28,10 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: color.paper },
       }}
     >
-      <Tabs.Screen name="play" options={{ title: 'Play', tabBarIcon: icon('play') }} />
-      <Tabs.Screen name="plan" options={{ title: 'Plan', tabBarIcon: icon('map') }} />
-      <Tabs.Screen name="practice" options={{ title: 'Practice', tabBarIcon: icon('check-circle') }} />
-      <Tabs.Screen name="workshop" options={{ title: 'Workshop', tabBarIcon: icon('home') }} />
+      <Tabs.Screen name="today" options={{ title: 'Today', tabBarIcon: icon('sun') }} />
+      <Tabs.Screen name="plan" options={{ title: 'My plan', tabBarIcon: icon('calendar') }} />
+      <Tabs.Screen name="practice" options={{ title: 'Practice', tabBarIcon: icon('target') }} />
+      <Tabs.Screen name="progress" options={{ title: 'Progress', tabBarIcon: icon('bar-chart-2') }} />
     </Tabs>
   );
 }

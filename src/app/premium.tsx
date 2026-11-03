@@ -44,7 +44,7 @@ export default function Premium() {
 
   if (done) {
     return (
-      <Screen footer={<Button title="Start practising" onPress={() => router.replace('/play')} />}>
+      <Screen footer={<Button title="Start practising" onPress={() => router.replace('/today')} />}>
         <Gap h={space.xxl} />
         <Title>{done} is active.</Title>
         <Gap />

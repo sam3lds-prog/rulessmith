@@ -17,7 +17,6 @@ import { applyAttempt, newSkillState } from '../engine/mastery';
 import { dayKey } from '../engine/time';
 import type { Attempt } from '../engine/types';
 import type { Quests } from '../quests/chapters';
-import type { Grant } from '../rewards/ledger';
 import type { Baseline, CheckRecord, ContentReport, Data, PlacementRun, SessionLogEntry, States, TokenEntry } from '../state/types';
 
 /** Fields that follow a learner to another device in the server snapshot (learner_state.state). */
@@ -32,14 +31,17 @@ export const SYNCED_KEYS = [
   'ladderBest',
   'checkpoints',
   'quests',
-  'grants',
   'checks',
-  'project',
 ] as const;
 export type Synced = Pick<Data, (typeof SYNCED_KEYS)[number]>;
 
-/** Version tag written into server snapshots. */
-export const SNAPSHOT_VERSION = 3;
+/**
+ * Version tag written into server snapshots. v4 removed the workshop (objects,
+ * project and object purchases). The server refuses an update that lowers it
+ * (supabase/migrations/20261103000000_snapshot_version_guard.sql), so an older
+ * app can't put them back.
+ */
+export const SNAPSHOT_VERSION = 4;
 
 export function pickSynced(d: Data): Synced {
   return {
@@ -53,9 +55,7 @@ export function pickSynced(d: Data): Synced {
     ladderBest: d.ladderBest,
     checkpoints: d.checkpoints,
     quests: d.quests,
-    grants: d.grants,
     checks: d.checks,
-    project: d.project,
   };
 }
 
@@ -146,9 +146,7 @@ export function mergeSynced(a: Synced, b: Synced | undefined, prefer?: 'a' | 'b'
     ladderBest,
     checkpoints: byAt(unionBy(a.checkpoints ?? [], b.checkpoints ?? [], (x) => x.at)),
     quests: mergeQuests(a.quests, b.quests),
-    grants: byAt(unionBy<Grant>(a.grants ?? [], b.grants ?? [], (x) => x.id)),
     checks: byAt(unionBy<CheckRecord>(a.checks ?? [], b.checks ?? [], (x) => x.id)),
-    project: pick(a.project, b.project, () => (a.project?.at ?? 0) >= (b.project?.at ?? 0)),
   };
 }
 

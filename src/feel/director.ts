@@ -9,7 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Platform } from 'react-native';
 import { useApp } from '../state/store';
-import { CELEBRATIONS, FEEL, type FeelEvent, type HapticId, type SoundId } from './events';
+import { FEEL, type FeelEvent, type HapticId, type SoundId } from './events';
 
 const SOURCES: Record<SoundId, number> = {
   tick: require('../../assets/sounds/tick.wav'),
@@ -17,7 +17,6 @@ const SOURCES: Record<SoundId, number> = {
   rise: require('../../assets/sounds/rise.wav'),
   note: require('../../assets/sounds/note.wav'),
   chime: require('../../assets/sounds/chime.wav'),
-  reveal: require('../../assets/sounds/reveal.wav'),
 };
 
 const players: Partial<Record<SoundId, AudioPlayer>> = {};
@@ -76,7 +75,6 @@ function buzz(id: HapticId) {
 /** Fire one feedback event. */
 export function feel(event: FeelEvent) {
   const s = useApp.getState().settings;
-  if (s.focus && CELEBRATIONS.includes(event)) return;
   const spec = FEEL[event];
   if (s.sound && spec.sound) play(spec.sound);
   if (s.haptics && spec.haptic) buzz(spec.haptic);
@@ -95,9 +93,7 @@ export function useReduceMotion(): boolean {
   return own || system;
 }
 
-/** Ambient scenery moves only when motion is allowed and Focus is off. */
-export function useAmbientMotion(): boolean {
-  const reduce = useReduceMotion();
-  const focus = useApp((s) => s.settings.focus);
-  return !reduce && !focus;
+/** Small movements (a pressed tile, a progress bar filling) run only when motion is allowed. */
+export function useMotion(): boolean {
+  return !useReduceMotion();
 }

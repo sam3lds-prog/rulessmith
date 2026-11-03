@@ -27,7 +27,7 @@ export const Body = (p: TextProps) => <Text {...p} style={[type.body, p.style]} 
 export const Small = (p: TextProps) => <Text {...p} style={[type.small, p.style]} />;
 export const Micro = (p: TextProps) => <Text {...p} style={[type.micro, p.style]} />;
 
-/** A short teal label above a heading ("Your learning trail"). Sentence case, never all caps. */
+/** A short label above a heading ("Recommended for you"). Sentence case, never all caps. */
 export const Eyebrow = (p: TextProps) => <Text {...p} style={[styles.eyebrow, p.style]} />;
 
 // ---------------------------------------------------------------- layout
@@ -74,7 +74,7 @@ export function BackLink({ label = 'Back' }: { label?: string }) {
   return (
     <Pressable
       accessibilityRole="link"
-      onPress={() => (router.canGoBack() ? router.back() : router.replace('/play'))}
+      onPress={() => (router.canGoBack() ? router.back() : router.replace('/today'))}
       style={({ pressed }) => [styles.back, pressed && { opacity: 0.6 }]}
       hitSlop={12}
     >
@@ -259,28 +259,26 @@ export function LinkRow({
   );
 }
 
-export type PlateTone = 'surface' | 'warm' | 'action' | 'growth';
+export type PlateTone = 'surface' | 'warm' | 'action' | 'panel';
 
 const PLATE_TONES: Record<PlateTone, ViewStyle | null> = {
   surface: null,
-  warm: { backgroundColor: color.goldWash, borderColor: color.goldWash, borderBottomColor: '#E8D3AA' },
-  action: { backgroundColor: color.actionWash, borderColor: color.actionWash, borderBottomColor: '#C9E0DA' },
-  growth: { backgroundColor: color.growth, borderColor: color.growth, borderBottomColor: '#D2E1D3' },
+  warm: { backgroundColor: color.goldWash, borderColor: color.goldWash, borderBottomColor: '#EADDBF' },
+  action: { backgroundColor: color.actionWash, borderColor: color.actionWash, borderBottomColor: '#D3DCF7' },
+  panel: { backgroundColor: color.panel, borderColor: color.panel, borderBottomColor: '#E1E6EE' },
 };
 
-/** A card: white (or a soft tone) with rounded corners and a warm depth edge. */
+/** A card: white (or a quiet tone) with a soft edge under it. */
 export function Plate({ children, style, tone = 'surface' }: { children: ReactNode; style?: StyleProp<ViewStyle>; tone?: PlateTone }) {
   return <View style={[styles.plate, PLATE_TONES[tone], style]}>{children}</View>;
 }
 
-/** Workshop Coins, as shown in headers and rewards. */
-export function CoinBadge({ count, style }: { count: number; style?: StyleProp<ViewStyle> }) {
+/** A thin progress bar. `of` 0 shows an empty bar. */
+export function Meter({ value, of, tone = 'action', label }: { value: number; of: number; tone?: 'action' | 'gold'; label: string }) {
+  const pct = of > 0 ? Math.max(0, Math.min(1, value / of)) : 0;
   return (
-    <View style={[styles.coin, style]} accessibilityLabel={`${count} Workshop Coins`}>
-      <View style={styles.coinDot}>
-        <Text style={styles.coinMark}>$</Text>
-      </View>
-      <Text style={[type.label, { fontFamily: font.num }]}>{count}</Text>
+    <View style={styles.meter} accessibilityRole="progressbar" accessibilityLabel={label} accessibilityValue={{ min: 0, max: of, now: value }}>
+      <View style={[styles.meterFill, { width: `${Math.round(pct * 100)}%`, backgroundColor: tone === 'gold' ? color.gold : color.action }]} />
     </View>
   );
 }
@@ -345,19 +343,6 @@ const styles = StyleSheet.create({
     gap: space.sm,
   },
   eyebrow: { fontFamily: font.label, fontSize: 13, lineHeight: 17, color: color.action, letterSpacing: 0.2 },
-  coin: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: color.surface,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: color.rule,
-    paddingVertical: 5,
-    paddingLeft: 6,
-    paddingRight: 12,
-    alignSelf: 'flex-start',
-  },
-  coinDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: color.goldBright, alignItems: 'center', justifyContent: 'center' },
-  coinMark: { fontFamily: font.num, fontSize: 12, lineHeight: 14, color: color.gold },
+  meter: { height: 8, borderRadius: 4, backgroundColor: color.paperDeep, overflow: 'hidden' },
+  meterFill: { height: 8, borderRadius: 4 },
 });

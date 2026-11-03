@@ -3,9 +3,9 @@ import { useEffect, useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ItemScreen } from '../boards/ItemScreen';
 import { LADDER_MISSES } from '../engine/mixer';
+import { skillName } from '../content';
 import { gameForItem } from '../games/registry';
 import { CHAPTER_BY_ID, MISSION_BY_ID } from '../quests/chapters';
-import { DISTRICT_BY_ID } from '../world/catalog';
 import { useApp } from '../state/store';
 import { Micro } from '../ui/kit';
 import { color, space, type } from '../ui/theme';
@@ -21,6 +21,7 @@ export default function Session() {
   const finish = useApp((s) => s.finishSession);
   const abandon = useApp((s) => s.abandonSession);
   const report = useApp((s) => s.report);
+  const addRelatedSlot = useApp((s) => s.addRelatedSlot);
   const answered = useRef(false);
   const slot = active?.slots[active.index];
   const slotKey = slot ? `${slot.templateId}@${slot.level}#${slot.seed}/v${slot.version}` : '';
@@ -47,12 +48,12 @@ export default function Session() {
         router.replace('/recap');
       } else {
         abandon();
-        router.replace('/play');
+        router.replace('/today');
       }
     }
   }, [active?.id, active?.index, slotKey, flagsVersion]);
 
-  if (!active) return <Redirect href="/play" />;
+  if (!active) return <Redirect href="/today" />;
   // Being replaced (switched off or changed since it was made): the effect above swaps it in a moment.
   if (!item || !slot) return null;
 
@@ -71,7 +72,7 @@ export default function Session() {
       router.replace('/recap');
     } else {
       abandon();
-      router.replace('/play');
+      router.replace('/today');
     }
   };
 
@@ -101,16 +102,16 @@ export default function Session() {
   );
 
   const mission = active.missionId ? MISSION_BY_ID[active.missionId] : undefined;
-  const district = mission ? DISTRICT_BY_ID[CHAPTER_BY_ID[mission.chapterId]?.districtId] : undefined;
+  const chapter = mission ? CHAPTER_BY_ID[mission.chapterId] : undefined;
   const isCheck = active.feedback === 'after-set' || active.quiz === 'recall';
   const game = isCheck ? null : gameForItem(item);
   const eyebrow = isCheck
-    ? 'Check what you know'
-    : mission && district
-      ? `${district.name} · ${mission.support === 'guided' ? 'learn through play' : 'on your own'}`
-      : game
-        ? 'Practice'
-        : undefined;
+    ? `${active.quiz === 'drill' ? 'Mixed drill' : active.quiz === 'recall' ? 'Review' : 'Concept check'} · results at the end`
+    : slot.reason === 'related'
+      ? `Related problem · ${skillName(item.skillId)}`
+      : chapter
+        ? `${chapter.title} · ${mission!.title}`
+        : skillName(item.skillId);
 
   return (
     <ItemScreen
@@ -120,6 +121,8 @@ export default function Session() {
       game={game}
       eyebrow={eyebrow}
       feedback={active.feedback}
+      onRelated={active.feedback === 'immediate' && !active.ladder && !active.challenge ? addRelatedSlot : undefined}
+      topicId={item.skillId}
       header={header}
       timed={active.timed}
       initialProgress={active.progress}

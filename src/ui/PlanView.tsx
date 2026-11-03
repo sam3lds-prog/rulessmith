@@ -1,5 +1,6 @@
-import { StyleSheet, Text, View } from 'react-native';
-import { skillName } from '../content';
+import Feather from '@expo/vector-icons/Feather';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { SKILL_BY_ID, skillName } from '../content';
 import { displayStatus } from '../engine/mastery';
 import { currentWeek } from '../engine/planner';
 import { formatShortDate, parseDay } from '../engine/time';
@@ -24,16 +25,19 @@ export function PlanView({
   skills,
   now,
   onAlternative,
+  onSkill,
 }: {
   plan: JourneyPlan;
   skills: States;
   now: number;
   onAlternative?: (a: PlanAlternative) => void;
+  /** Opens a skill's topic page. Rows are plain text without it. */
+  onSkill?: (skillId: string) => void;
 }) {
   const thisWeek = currentWeek(plan, now)?.index ?? 0;
   return (
     <View style={{ gap: space.lg }}>
-      <Body style={{ fontFamily: font.bodyBold, fontSize: 19, lineHeight: 27 }}>{plan.summary}</Body>
+      <Body style={{ fontFamily: font.bodyBold, fontSize: 17, lineHeight: 25 }}>{plan.summary}</Body>
 
       {!plan.fits ? (
         <Plate tone="warm">
@@ -57,12 +61,26 @@ export function PlanView({
               <Heading style={{ fontSize: 17 }}>{plan.rolling && w.index % 4 === 0 && w.index > 0 ? `Month ${w.index / 4 + 1}, week 1` : `Week ${w.index + 1}`}</Heading>
               <Small>{w.index === thisWeek ? 'This week' : `From ${formatShortDate(parseDay(w.startsOn))}`}</Small>
             </View>
-            {w.skills.map((id) => (
-              <View key={id} style={styles.skillLine}>
-                <Text style={[type.body, { flex: 1, fontSize: 16 }]}>{skillName(id)}</Text>
-                <Stamp status={displayStatus(skills[id], now)} />
-              </View>
-            ))}
+            {w.skills.map((id) =>
+              onSkill && SKILL_BY_ID[id] ? (
+                <Pressable
+                  key={id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${skillName(id)}. Open the topic`}
+                  onPress={() => onSkill(id)}
+                  style={({ pressed }) => [styles.skillLine, styles.skillButton, pressed && { backgroundColor: color.paperDeep }]}
+                >
+                  <Text style={[type.body, { flex: 1, fontSize: 16 }]}>{skillName(id)}</Text>
+                  <Stamp status={displayStatus(skills[id], now)} />
+                  <Feather name="chevron-right" size={18} color={color.inkFaint} />
+                </Pressable>
+              ) : (
+                <View key={id} style={styles.skillLine}>
+                  <Text style={[type.body, { flex: 1, fontSize: 16 }]}>{skillName(id)}</Text>
+                  <Stamp status={displayStatus(skills[id], now)} />
+                </View>
+              ),
+            )}
             {w.secureTargets.length ? (
               <Small>Milestone: secure {w.secureTargets.map(skillName).join(', ')}.</Small>
             ) : (
@@ -83,5 +101,6 @@ const styles = StyleSheet.create({
   weekNow: { borderTopWidth: 3, borderTopColor: color.action },
   weekHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   skillLine: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 30 },
+  skillButton: { minHeight: 44, borderRadius: 8, paddingHorizontal: 4, marginHorizontal: -4 },
 });
 

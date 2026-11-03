@@ -19,8 +19,7 @@ import { color, space } from '../ui/theme';
 const FEEL_ROWS: { key: keyof FeelSettings; title: string; detail: string }[] = [
   { key: 'sound', title: 'Sounds', detail: 'Soft taps and chimes. Off when your phone is on silent.' },
   { key: 'haptics', title: 'Vibration', detail: 'A light tap when you place a tile or get it right.' },
-  { key: 'reduceMotion', title: 'Reduce motion', detail: 'No moving gears or animated reveals. Also follows your device setting.' },
-  { key: 'focus', title: 'Focus', detail: 'A calmer workshop: no moving scenery, quick reveals and no celebration sounds.' },
+  { key: 'reduceMotion', title: 'Reduce motion', detail: 'No animated transitions. Also follows your device setting.' },
 ];
 
 export default function You() {
@@ -85,9 +84,9 @@ export default function You() {
       ) : null}
 
       <Gap h={space.lg} />
-      <Heading>Workshop Coins</Heading>
+      <Heading>Tokens</Heading>
       <Small style={{ marginTop: space.xs }}>
-        You have {Math.max(0, s.tokens)}. Earn {TOKEN_REWARDS.sessionComplete} for each finished session, {TOKEN_REWARDS.dailyPuzzle} for each daily puzzle and {WEEKLY_REWARD} for a weekly goal. Spend them on workshop objects or {TOKEN_COSTS.bonusRun} on a bonus run. Coins are never sold, and hints are always free.
+        You have {Math.max(0, s.tokens)}. Earn {TOKEN_REWARDS.sessionComplete} for each finished session, {TOKEN_REWARDS.dailyPuzzle} for each daily puzzle and {WEEKLY_REWARD} for a weekly goal. {TOKEN_COSTS.bonusRun} tokens buy one more session on a day you've used the free ones. Tokens are never sold, and hints and explanations are always free.
       </Small>
 
       <Gap h={space.xl} />

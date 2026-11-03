@@ -47,13 +47,14 @@ import { grant, isPremium, maxLevelFor, ownsChallenge, runsAreUnlimited, runsLef
 import { createTestProvider } from '../monetization/purchases';
 import { TOKEN_COSTS, TOKEN_REWARDS } from '../monetization/tokens';
 import { examSkills } from '../exams/blueprints';
-import { MISSION_BY_ID, missionSlots, missionState, missionsDone } from '../quests/chapters';
+import { gameSlots, GAMES, practiceSlots, type GameId } from '../games/registry';
+import { MISSION_BY_ID, missionSlots, missionState } from '../quests/chapters';
 import { drillSlots, heldOutSlots, POLICIES, repairSlots, summarizeCheck, type QuizKind } from '../quizzes/policies';
-import { buy, grantOnce, milestoneGrants, weeklyRewardEntry, weeksMet } from '../rewards/ledger';
+import { weeklyRewardEntry, weeksMet } from '../rewards/ledger';
 import { applyPlacementRun, derived, importGuest, mergeRemote, pickSynced, type Synced } from '../sync/merge';
-import { itemForMission } from '../world/catalog';
 import { clearBucket, createSaver, GUEST, openAtLaunch, OWNER_KEY, readBucket, writeBucket, type KV } from './buckets';
 import { migrateSnapshot } from './migrate';
+import { sessionHasWork } from './work';
 import {
   DEVICE_KEYS,
   freshLearner,
@@ -72,7 +73,10 @@ import {
 
 export type { ActiveSession, AnswerRecord, ContentReport, DailyResult, ItemProgress, Recap, SessionResult } from './types';
 
-/** `in-progress`: a session with answers is open; finish or end it first, so its results are never lost. */
+/**
+ * `in-progress`: the open session holds work (an answer, a hint, a revealed rule or
+ * anything on the board). Finish or end it first, so nothing is lost silently.
+ */
 export type StartResult = { ok: true } | { ok: false; reason: 'no-runs' | 'locked' | 'empty' | 'no-profile' | 'in-progress' };
 
 /** What happened when the current puzzle was checked against the kill switch and template versions. */
@@ -109,9 +113,18 @@ interface Actions {
   startMission(missionId: string): StartResult;
   /**
    * A quiz: a concept check on `skills`, a mixed drill for the learner's exam, a
-   * guided repair of `skillId`, or a recall set on due skills.
+   * guided repair of `skillId`, a recall set on due skills, or guided practice on
+   * `skillId` (optionally one family, `templateId`). `returnTo` is the topic the
+   * recap leads back to.
    */
-  startQuiz(kind: Exclude<QuizKind, 'practice'>, opts?: { skills?: string[]; skillId?: string }): StartResult;
+  startQuiz(kind: QuizKind, opts?: { skills?: string[]; skillId?: string; templateId?: string; returnTo?: string }): StartResult;
+  /** One game for one skill: that skill's enabled families in that board style. Empty if there are none. */
+  startGame(skillId: string, game: GameId): StartResult;
+  /**
+   * After a wrong answer (immediate feedback only): add a fresh guided puzzle of the
+   * same family right after this one. The wrong answer stays as recorded. False if not allowed.
+   */
+  addRelatedSlot(): boolean;
   currentItem(): Item | undefined;
   /** Replace the current puzzle if it was switched off or its template changed. */
   ensureServable(): ServeStatus;
@@ -132,12 +145,8 @@ interface Actions {
   purchase(productId: string): Promise<{ ok: boolean; error?: string }>;
   restorePurchases(): Promise<{ ok: boolean }>;
 
-  /** Buy a workshop object with Workshop Coins. */
-  buyItem(itemId: string): boolean;
-  /** The object the learner is working toward (shown on Play and Workshop). */
-  chooseProject(itemId: string | undefined): void;
   setFeel(patch: Partial<FeelSettings>): void;
-  /** Pay rewards already earned (weekly goals, mission objects, milestones). Idempotent; runs at launch and after a sync. */
+  /** Pay weekly-goal tokens already earned. Idempotent; runs at launch and after a sync. */
   settle(): void;
 
   report(item: Item, reason: string): void;
@@ -325,17 +334,18 @@ export const useApp = create<AppState>()((set, get) => {
     quiz?: QuizKind;
     countsAsRun?: boolean;
     timed?: boolean;
+    returnTo?: string;
+    game?: GameId;
   }): StartResult => {
     const s = get();
     const now = Date.now();
     if (!s.profile) return { ok: false, reason: 'no-profile' };
-    if (s.active?.results.length) return { ok: false, reason: 'in-progress' };
+    const runs = runsForReplacing(now);
+    if (!runs) return { ok: false, reason: 'in-progress' };
     if (args.slots.length === 0) return { ok: false, reason: 'empty' };
-    const runs = freshRuns(s.runs, now);
     const tracks = [...new Set(args.slots.map((x) => SKILL_BY_ID[x.skillId]?.track))].filter(Boolean) as TrackId[];
     const counted = Boolean(args.countsAsRun) && !runsAreUnlimited(tracks, s.entitlements, now);
     if (counted && runsLeftToday(runs.used, runs.bonus) <= 0) {
-      set({ runs });
       track('runs_exhausted', { mode: args.mode });
       return { ok: false, reason: 'no-runs' };
     }
@@ -353,6 +363,8 @@ export const useApp = create<AppState>()((set, get) => {
       missionId: args.missionId,
       quiz: args.quiz,
       feedback: policy?.feedback ?? 'immediate',
+      returnTo: args.returnTo,
+      game: args.game,
     };
     const quests = args.missionId
       ? {
@@ -373,28 +385,29 @@ export const useApp = create<AppState>()((set, get) => {
   /** Days with any answered puzzle, for the weekly goal. */
   const activityDays = () => new Set(get().attempts.map((x) => dayKey(x.at)));
 
-  /** Grants and coins that follow from what the learner has done: mission objects, milestones, the weekly goal. Each pays once. */
-  const settleRewards = (now: number) => {
+  /** Weekly-goal tokens: every week whose goal was met pays once, including a past week settled late. Returns tokens added. */
+  const settleTokens = (now: number) => {
     const s = get();
-    let grants = s.grants;
     let tokenLedger = s.tokenLedger;
-    // Every week whose goal was met pays once, including a past week settled late.
     for (const week of weeksMet(activityDays())) {
       if (!tokenLedger.some((e) => e.id === `weekly:${week}`)) tokenLedger = [...tokenLedger, weeklyRewardEntry(week, now)];
     }
-    const weeklyGoalsMet = tokenLedger.filter((e) => e.reason === 'weekly').length;
-    for (const [id, rec] of Object.entries(s.quests)) {
-      const item = rec.completedAt ? itemForMission(id) : undefined;
-      if (item) grants = grantOnce(grants, item.id, `mission:${id}`, rec.completedAt!);
-    }
-    grants = milestoneGrants(grants, missionsDone(s.quests), weeklyGoalsMet, now);
-    const newItems = grants.filter((g) => !s.grants.some((x) => x.id === g.id)).map((g) => g.itemId);
-    const coins = tokenLedger.filter((e) => !s.tokenLedger.some((x) => x.id === e.id)).reduce((n, e) => n + e.delta, 0);
-    if (grants !== s.grants || tokenLedger !== s.tokenLedger) {
-      set({ grants, tokenLedger, ...derived({ tokenLedger, sessionLog: s.sessionLog, daily: s.daily }) });
-      for (const itemId of newItems) track('project_revealed', { item: itemId });
-    }
-    return { newItems, coins };
+    if (tokenLedger === s.tokenLedger) return 0;
+    set({ tokenLedger, ...derived({ tokenLedger, sessionLog: s.sessionLog, daily: s.daily }) });
+    return tokenLedger.length > s.tokenLedger.length ? tokenLedger.slice(s.tokenLedger.length).reduce((n, e) => n + e.delta, 0) : 0;
+  };
+
+  /**
+   * Runs when a new session would replace the open one. An open session with no work
+   * (just opened) is replaced silently, and the free run it used is handed back, so
+   * replacing it never charges twice. Null when the open session has work.
+   */
+  const runsForReplacing = (now: number): Data['runs'] | null => {
+    const s = get();
+    const runs = freshRuns(s.runs, now);
+    if (!s.active) return runs;
+    if (sessionHasWork(s.active)) return null;
+    return s.active.countsAsRun && dayKey(s.active.startedAt) === runs.day ? { ...runs, used: Math.max(0, runs.used - 1) } : runs;
   };
 
   // -------------------------------------------------------------- buckets
@@ -440,7 +453,7 @@ export const useApp = create<AppState>()((set, get) => {
         cursor = pulled.cursor;
         set({ ...data, account: { ...get().account, pullCursor: cursor, loadedAt: get().account.loadedAt ?? Date.now() } });
         // Another device may have finished the week's fourth day or a mission: pay what is now earned (once).
-        if (get().profile) settleRewards(Date.now());
+        if (get().profile) settleTokens(Date.now());
         newFromServer += get().attempts.length - before;
         return snapshot;
       };
@@ -578,8 +591,8 @@ export const useApp = create<AppState>()((set, get) => {
       const s = get();
       const now = Date.now();
       if (!s.profile && mode !== 'try') return { ok: false, reason: 'no-profile' };
-      if (s.active?.results.length) return { ok: false, reason: 'in-progress' };
-      const runs = freshRuns(s.runs, now);
+      const runs = runsForReplacing(now);
+      if (!runs) return { ok: false, reason: 'in-progress' };
       let slots: Slot[] = [];
       let title = 'Session';
       let ladder: ActiveSession['ladder'];
@@ -645,7 +658,6 @@ export const useApp = create<AppState>()((set, get) => {
       const tracks = [...new Set(slots.map((x) => SKILL_BY_ID[x.skillId]?.track))].filter(Boolean) as TrackId[];
       const counted = COUNTED_MODES.includes(mode) && !runsAreUnlimited(tracks, s.entitlements, now);
       if (counted && runsLeftToday(runs.used, runs.bonus) <= 0) {
-        set({ runs });
         track('runs_exhausted', { mode });
         return { ok: false, reason: 'no-runs' };
       }
@@ -699,31 +711,71 @@ export const useApp = create<AppState>()((set, get) => {
     startQuiz: (kind, opts = {}) => {
       const s = get();
       const policy = POLICIES[kind];
+      const returnTo = opts.returnTo;
       switch (kind) {
         case 'check': {
           const skills = opts.skills?.length ? opts.skills : todaysTargets(s.plan, s.skills, Date.now());
           const slots = heldOutSlots({ ...pick(), skills, states: s.skills, length: policy.length, avoid: recentlyPlayedFamilies(), reason: 'check' });
-          return begin({ mode: 'check', title: policy.title, slots, quiz: 'check' });
+          return begin({ mode: 'check', title: policy.title, slots, quiz: 'check', returnTo });
         }
         case 'drill': {
           const exams = s.profile?.exams ?? [];
           const ids = examSkills(exams);
           const skills = ids.map((id) => ({ id, weight: exams.length ? Math.max(...exams.map((e) => SKILL_BY_ID[id].weights[e])) : 1 }));
           const slots = drillSlots({ ...pick(), skills, states: s.skills });
-          return begin({ mode: 'drill', title: policy.title, slots, quiz: 'drill', countsAsRun: true, timed: Boolean(s.profile?.style.timed) });
+          return begin({ mode: 'drill', title: policy.title, slots, quiz: 'drill', countsAsRun: true, timed: Boolean(s.profile?.style.timed), returnTo });
         }
         case 'repair': {
           if (!opts.skillId) return { ok: false, reason: 'empty' };
           const slots = repairSlots({ ...pick(), skillId: opts.skillId, states: s.skills });
-          return begin({ mode: 'repair', title: `Repair: ${SKILL_BY_ID[opts.skillId]?.name ?? ''}`, slots, quiz: 'repair' });
+          return begin({ mode: 'repair', title: `Repair: ${SKILL_BY_ID[opts.skillId]?.name ?? ''}`, slots, quiz: 'repair', returnTo });
         }
         case 'recall': {
           const due = dueReviews(s.skills, Date.now());
           const skills = opts.skills?.length ? opts.skills : due;
           const slots = heldOutSlots({ ...pick(), skills, states: s.skills, length: policy.length, avoid: recentlyPlayedFamilies(), reason: 'recall' });
-          return begin({ mode: 'review', title: policy.title, slots, quiz: 'recall' });
+          return begin({ mode: 'review', title: policy.title, slots, quiz: 'recall', returnTo });
+        }
+        case 'practice': {
+          if (!opts.skillId) return { ok: false, reason: 'empty' };
+          // Practising one mistake's family is short and free, like a repair; a topic's practice set uses a run.
+          const one = Boolean(opts.templateId);
+          const slots = practiceSlots({ ...pick(), state: stateOf(s.skills, opts.skillId), templateId: opts.templateId, length: one ? 3 : policy.length });
+          return begin({
+            mode: 'practice',
+            title: `${one ? 'Practise this kind' : 'Guided practice'}: ${SKILL_BY_ID[opts.skillId]?.name ?? ''}`,
+            slots,
+            quiz: 'practice',
+            countsAsRun: one ? false : policy.countsAsRun,
+            returnTo: returnTo ?? opts.skillId,
+          });
         }
       }
+    },
+
+    startGame: (skillId, game) => {
+      const s = get();
+      const skill = SKILL_BY_ID[skillId];
+      const g = GAMES[game];
+      if (!skill || !g) return { ok: false, reason: 'empty' };
+      const slots = gameSlots({ ...pick(), state: stateOf(s.skills, skillId), game });
+      const r = begin({ mode: 'game', title: `${g.name}: ${skill.name}`, slots, countsAsRun: true, returnTo: skillId, game });
+      if (r.ok) track('game_variant_played', { game, skill: skillId });
+      return r;
+    },
+
+    addRelatedSlot: () => {
+      const a = get().active;
+      if (!a || a.feedback !== 'immediate' || a.ladder || a.challenge) return false;
+      const answered = a.results[a.index];
+      const slot = a.slots[a.index];
+      if (!answered || answered.correct || !slot) return false;
+      if (a.slots[a.index + 1]?.reason === 'related') return false;
+      const related: Slot = { ...slot, seed: freshSeed(pick().rng, slot.templateId, get().recentSeeds), reason: 'related', support: 'guided', band: 'learn' };
+      const slots = [...a.slots.slice(0, a.index + 1), related, ...a.slots.slice(a.index + 1)];
+      set({ active: { ...a, slots } });
+      track('slot_replaced', { from: slot.templateId, to: slot.templateId, related: true });
+      return true;
     },
 
     currentItem: () => {
@@ -805,8 +857,8 @@ export const useApp = create<AppState>()((set, get) => {
       let slots = a.slots;
       const upcoming = slots[index];
       // A skill that reached Practicing during this session switches to checks with the rule hidden (and back, if it slipped).
-      if (upcoming && (upcoming.reason === 'target' || upcoming.reason === 'stretch')) {
-        const support = supportFor(stateOf(get().skills, upcoming.skillId), upcoming.reason);
+      if (upcoming && (upcoming.reason === 'target' || upcoming.reason === 'stretch' || upcoming.reason === 'game')) {
+        const support = supportFor(stateOf(get().skills, upcoming.skillId), upcoming.reason === 'game' ? 'target' : upcoming.reason);
         if (support !== upcoming.support) slots = slots.map((x, i) => (i === index ? { ...x, support } : x));
       }
       set({ active: { ...a, index, slots, progress: undefined } });
@@ -882,7 +934,7 @@ export const useApp = create<AppState>()((set, get) => {
         quiz: a.quiz,
         check,
         attemptIds: results.map((r) => r.attemptId),
-        rewards: { coins: 0, items: [] },
+        returnTo: a.returnTo,
         title: early ? `${a.title} (ended early)` : a.title,
         correct,
         total: results.length,
@@ -911,8 +963,8 @@ export const useApp = create<AppState>()((set, get) => {
         ladderBest,
         checkpoints: a.mode === 'checkpoint' ? [...s.checkpoints, { at: now, correct, total: results.length }] : s.checkpoints,
       });
-      const settled = settleRewards(now);
-      const withRewards: Recap = { ...recap, rewards: { coins: tokens + settled.coins, items: settled.newItems } };
+      const weekly = settleTokens(now);
+      const withRewards: Recap = { ...recap, tokens: tokens + weekly };
       set({ lastRecap: withRewards });
       track('session_completed', { mode: a.mode, correct, total: results.length, early });
       if (firstSession && results.length > 0 && !early) track('mission_activated', {});
@@ -924,7 +976,9 @@ export const useApp = create<AppState>()((set, get) => {
     abandonSession: () => {
       const a = get().active;
       // An abandoned session with answers still counts its evidence; it just has no recap.
-      set({ active: undefined });
+      // One left untouched hands its free run back.
+      const runs = a && !sessionHasWork(a) && a.countsAsRun ? runsForReplacing(Date.now()) : null;
+      set({ active: undefined, ...(runs ? { runs } : {}) });
       if (a) track('session_completed', { mode: a.mode, abandoned: true, total: a.results.length });
     },
 
@@ -951,7 +1005,7 @@ export const useApp = create<AppState>()((set, get) => {
       // One id per day, so two devices answering the same day earn the tokens once.
       const tokenLedger = [...get().tokenLedger, { id: `daily-${day}`, delta: TOKEN_REWARDS.dailyPuzzle, reason: 'daily' as const, at: Date.now() }];
       set({ daily, tokenLedger, dailyProgress: undefined, ...derived({ daily, tokenLedger, sessionLog: get().sessionLog }) });
-      settleRewards(Date.now());
+      settleTokens(Date.now());
       track('daily_answered', { correct: r.correct, hints: r.hintsUsed });
       void get().syncNow();
     },
@@ -998,24 +1052,10 @@ export const useApp = create<AppState>()((set, get) => {
       return { ok: res.ok };
     },
 
-    buyItem: (itemId) => {
-      const s = get();
-      const r = buy(s.tokenLedger, s.grants, itemId, Date.now());
-      if (!r) return false;
-      set({ tokenLedger: r.ledger, grants: r.grants, ...derived({ tokenLedger: r.ledger, sessionLog: s.sessionLog, daily: s.daily }) });
-      track('project_revealed', { item: itemId, bought: true });
-      return true;
-    },
-
-    chooseProject: (itemId) => {
-      set({ project: itemId ? { itemId, at: Date.now() } : undefined });
-      if (itemId) track('project_selected', { item: itemId });
-    },
-
     setFeel: (patch) => set({ settings: { ...get().settings, ...patch } }),
 
     settle: () => {
-      if (get().profile) settleRewards(Date.now());
+      if (get().profile) settleTokens(Date.now());
     },
 
     report: (item, reason) => {

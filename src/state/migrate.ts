@@ -22,7 +22,7 @@ import { RENAMED_PRODUCTS } from '../monetization/products';
 import { derived, SNAPSHOT_VERSION, type Synced } from '../sync/merge';
 import { INITIAL, type ContentReport, type Data, type DailyResult, type SessionLogEntry, type TokenEntry } from './types';
 
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 type Loose = Record<string, any>;
 
@@ -97,6 +97,9 @@ const migrateReport = (r: Loose, i: number): ContentReport => ({ ...(r as Conten
 const renamePacks = (ids: string[] = []) => ids.map((id) => RENAMED_PRODUCTS[id] ?? id);
 
 /** Ledgers from v1 counters. One carried-over entry keeps the balance; the session count becomes placeholder entries. */
+/** Coins spent on workshop objects (`buy:<item>`). The objects were removed in v4, so the spends go too (a refund). */
+export const withoutWorkshopSpends = (ledger: TokenEntry[] | undefined): TokenEntry[] => (ledger ?? []).filter((e) => !String(e.id).startsWith('buy:'));
+
 function ledgersFromV1(s: Loose): { tokenLedger: TokenEntry[]; sessionLog: SessionLogEntry[] } {
   const tokenLedger: TokenEntry[] = s.tokenLedger ?? (s.tokens ? [{ id: 'legacy-balance', delta: s.tokens, reason: 'carried-over', at: 0 }] : []);
   const sessionLog: SessionLogEntry[] =
@@ -161,6 +164,20 @@ export function migrateData(raw: Loose | undefined, version: number): Data {
     if (s.active) s.active = { ...s.active, feedback: s.active.feedback ?? 'immediate' };
     if (s.lastRecap) s.lastRecap = { ...s.lastRecap, attemptIds: s.lastRecap.attemptIds ?? [], rewards: s.lastRecap.rewards ?? { coins: s.lastRecap.tokens ?? 0, items: [] } };
   }
+  if (version < 4) {
+    // v4 removed the workshop, and its data with it (the owner's decision): objects, the project
+    // and the coins spent on objects, which are refunded by dropping those spends. Learning records,
+    // missions, checks and the rest of the token ledger are untouched.
+    delete s.grants;
+    delete s.project;
+    s.tokenLedger = withoutWorkshopSpends(s.tokenLedger);
+    if (s.settings) delete s.settings.focus;
+    if (s.lastRecap) {
+      const { rewards, ...rest } = s.lastRecap;
+      s.lastRecap = { ...rest, tokens: rewards?.coins ?? rest.tokens ?? 0 };
+    }
+    Object.assign(s, derived({ tokenLedger: s.tokenLedger, sessionLog: s.sessionLog ?? [], daily: s.daily ?? {} }));
+  }
   s.settings = { ...INITIAL.settings, ...(s.settings ?? {}) };
   const out = { ...INITIAL } as unknown as Loose;
   for (const k of Object.keys(INITIAL)) if (s[k] !== undefined) out[k] = s[k];
@@ -175,20 +192,19 @@ export function migrateData(raw: Loose | undefined, version: number): Data {
 export function migrateSnapshot(raw: Loose | null | undefined): Synced | undefined {
   if (!raw) return undefined;
   const v = typeof raw.v === 'number' ? raw.v : 1;
-  const s: Loose = v >= SNAPSHOT_VERSION ? raw : { ...raw, ...ledgersFromV1(raw), daily: migrateDaily(raw.daily), placementRuns: raw.placementRuns ?? [] };
+  const s: Loose = v >= 2 ? raw : { ...raw, ...ledgersFromV1(raw), daily: migrateDaily(raw.daily), placementRuns: raw.placementRuns ?? [] };
   return {
     profile: s.profile,
     plan: s.plan,
     placementRuns: s.placementRuns ?? [],
     baseline: s.baseline,
-    tokenLedger: s.tokenLedger ?? [],
+    // A v3 snapshot may still carry object purchases; v4 has none (see withoutWorkshopSpends).
+    tokenLedger: withoutWorkshopSpends(s.tokenLedger),
     sessionLog: s.sessionLog ?? [],
     daily: s.daily ?? {},
     ladderBest: s.ladderBest ?? {},
     checkpoints: s.checkpoints ?? [],
     quests: s.quests ?? {},
-    grants: s.grants ?? [],
     checks: s.checks ?? [],
-    project: s.project,
   };
 }
