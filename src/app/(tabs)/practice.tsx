@@ -3,7 +3,7 @@ import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BannerSlot } from '../../ads/AdSlots';
-import { SKILL_BY_ID, SKILLS, TRACKS, type TrackId } from '../../content';
+import { SKILL_BY_ID, SKILLS, templatesForSkill, TRACKS, type TrackId } from '../../content';
 import { displayStatus } from '../../engine/mastery';
 import { todaysTargets } from '../../engine/planner';
 import { dayKey } from '../../engine/time';
@@ -19,6 +19,7 @@ import { Button, Chip, Eyebrow, Gap, Heading, Label, LinkRow, Micro, Plate, Scre
 import { color, radius, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
 import { useNow } from '../../ui/useNow';
+import { useRecord } from '../../ui/useRecord';
 
 const RELEASED = TRACKS.filter((t) => t.available);
 
@@ -29,22 +30,32 @@ const RELEASED = TRACKS.filter((t) => t.available);
 export default function Practice() {
   const now = useNow();
   const s = useApp();
-  const targets = s.plan ? todaysTargets(s.plan, s.skills, now) : [];
+  // Answers in an unfinished check stay out of these views until it ends.
+  const rec = useRecord();
+  const targets = s.plan ? todaysTargets(s.plan, rec.skills, now) : [];
   const [track, setTrack] = useState<TrackId>(() => (targets[0] ? SKILL_BY_ID[targets[0]].track : RELEASED[0].id));
   const [skillId, setSkillId] = useState<string>(() => targets[0] ?? SKILLS.find((k) => k.track === RELEASED[0].id)!.id);
   const [blocked, setBlocked] = useState(false);
+  const [empty, setEmpty] = useState(false);
   const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
 
   const premium = isPremium(s.entitlements, now);
   const banner = shouldShowBanner('practice', { adsEnabled: adsLive(s), ageBand: s.profile.ageBand, premium });
   const skill = SKILL_BY_ID[skillId];
-  const games = gamesForSkill(skillId, maxLevelFor(skillId, s.entitlements, now));
-  const missesBySkill = mistakeCounts(s.attempts);
+  const cap = maxLevelFor(skillId, s.entitlements, now);
+  const games = gamesForSkill(skillId, cap);
+  // Every family of a skill can be switched off remotely; then there is nothing to start.
+  const available = templatesForSkill(skillId, cap).length > 0;
+  const missesBySkill = mistakeCounts(rec.attempts);
   const totalMisses = Object.values(missesBySkill).reduce((a, b) => a + b, 0);
   const dailyDone = s.daily[dayKey(now)];
 
-  const go = (run: () => StartResult) => start(run, (r) => setBlocked(!r.ok && r.reason === 'no-runs'));
+  const go = (run: () => StartResult) =>
+    start(run, (r) => {
+      setBlocked(!r.ok && r.reason === 'no-runs');
+      setEmpty(!r.ok && r.reason === 'empty');
+    });
   const pickTrack = (t: TrackId) => {
     setTrack(t);
     setSkillId(SKILLS.find((k) => k.track === t)!.id);
@@ -74,7 +85,7 @@ export default function Practice() {
                 style={({ pressed }) => [styles.skillRow, on && styles.skillRowOn, pressed && { opacity: 0.85 }]}
               >
                 <Text style={[type.label, { flex: 1, color: on ? color.actionDeep : color.ink }]}>{k.name}</Text>
-                <Stamp status={displayStatus(s.skills[k.id], now)} />
+                <Stamp status={displayStatus(rec.skills[k.id], now)} />
               </Pressable>
             );
           })}
@@ -96,14 +107,19 @@ export default function Practice() {
           {games.map((g) => (
             <ActionRow key={g} icon="play" title={GAMES[g].name} detail={GAMES[g].tagline} onPress={() => go(() => s.startGame(skill.id, g))} />
           ))}
-          <Label style={{ marginTop: space.sm }}>Practise and check</Label>
-          <ActionRow icon="book-open" title="Guided practice" detail="Six questions with the rule on screen and an explanation after each." onPress={() => go(() => s.startQuiz('practice', { skillId: skill.id }))} />
-          <ActionRow
-            icon="check-square"
-            title="Concept check"
-            detail="Five fresh questions with the rule hidden. Results and explanations at the end."
-            onPress={() => go(() => s.startQuiz('check', { skills: [skill.id], returnTo: skill.id }))}
-          />
+          {available ? (
+            <>
+              <Label style={{ marginTop: space.sm }}>Practise and check</Label>
+              <ActionRow icon="book-open" title="Guided practice" detail="Six questions with the rule on screen and an explanation after each." onPress={() => go(() => s.startQuiz('practice', { skillId: skill.id }))} />
+              <ActionRow
+                icon="check-square"
+                title="Concept check"
+                detail="Five fresh questions with the rule hidden. Results and explanations at the end."
+                onPress={() => go(() => s.startQuiz('check', { skills: [skill.id], returnTo: skill.id }))}
+              />
+            </>
+          ) : null}
+          {!available || empty ? <Small style={{ color: color.ink }}>This topic's puzzles are paused for a fix right now. Your progress is safe; try another topic.</Small> : null}
           <ActionRow
             icon="rotate-ccw"
             title="Review my mistakes"

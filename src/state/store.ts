@@ -320,10 +320,10 @@ export const useApp = create<AppState>()((set, get) => {
 
   // -------------------------------------------------------------- missions and quizzes
 
-  /** Families the learner played in the last day of chapter games, so a check can hold them out. */
+  /** Families played in the last day with the rule on screen (paths, games, guided practice, repairs), so a check can hold them out. */
   const recentlyPlayedFamilies = () => {
     const since = Date.now() - 86400000;
-    return [...new Set(get().attempts.filter((x) => x.at > since && (x.mode === 'quest' || x.mode === 'repair')).map((x) => x.templateId))];
+    return [...new Set(get().attempts.filter((x) => x.at > since && ['quest', 'repair', 'game', 'practice'].includes(x.mode)).map((x) => x.templateId))];
   };
 
   const begin = (args: {
@@ -921,7 +921,7 @@ export const useApp = create<AppState>()((set, get) => {
                 correct,
                 total: results.length,
                 at: now,
-                missed: results.filter((r) => !r.correct).map((r) => ({ skillId: r.skillId, misconception: s.attempts.find((x) => x.id === r.attemptId)?.misconception })),
+                missed: results.filter((r) => !r.correct).map((r) => ({ skillId: r.skillId, templateId: r.templateId, misconception: s.attempts.find((x) => x.id === r.attemptId)?.misconception })),
               },
             ]
           : s.checks;

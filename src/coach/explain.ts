@@ -17,7 +17,7 @@ import { optionIsCorrect, primeFactorsBrute } from '../content/check';
 import { divisorCountBrute, enumerateFills, evalExpr, evalPred, evalValue, findCounterexample, isCounterexample, isPrimeBrute } from '../content/evaluate';
 import { describe, fmt, formatTuple, sup } from '../content/format';
 import type { CheckResult, Claim, Cond, ConstructPayload, Expr, Item, NumPredicate, Response } from '../content/types';
-import { MISCONCEPTION_NOTES } from '../quizzes/policies';
+import { noteFor } from '../quizzes/policies';
 
 export interface Coaching {
   /** The learner's own answer, in words: "You made 442." */
@@ -37,7 +37,8 @@ export interface Coaching {
 // ------------------------------------------------------------------ arithmetic
 
 const digitsOf = (n: bigint) => (n < 0n ? -n : n).toString().split('').map(Number);
-const sumText = (ds: number[]) => (ds.length > 1 && ds.length <= 9 ? `${ds.join(' + ')} = ${ds.reduce((a, b) => a + b, 0)}` : `${ds.reduce((a, b) => a + b, 0)}`);
+// Digits are written out for short numbers only; for long ones the sum alone is easier to read.
+const sumText = (ds: number[]) => (ds.length > 1 && ds.length <= 6 ? `${ds.join(' + ')} = ${ds.reduce((a, b) => a + b, 0)}` : `${ds.reduce((a, b) => a + b, 0)}`);
 const isqrt = (n: bigint) => {
   if (n < 2n) return n;
   let x = BigInt(Math.floor(Math.sqrt(Number(n))));
@@ -50,6 +51,12 @@ const smallestFactor = (n: bigint) => {
   return n;
 };
 const isOrIsnt = (b: boolean) => (b ? 'is' : "isn't");
+
+/** Composite divisors the content teaches as two tests at once, split into parts that share no factor. */
+const TWO_TESTS: Record<number, [number, number]> = { 6: [2, 3], 12: [4, 3], 15: [3, 5], 18: [2, 9], 20: [4, 5], 24: [8, 3], 36: [4, 9], 40: [8, 5], 45: [9, 5], 72: [8, 9] };
+
+/** Longest explanation line shown; anything longer falls back to the item's own explanation. */
+const MAX_LINE = 420;
 
 /** Why a number does or doesn't meet a condition, in one clause. Arithmetic only; no verdict words. */
 export function reason(n: bigint, p: NumPredicate): string {
@@ -72,6 +79,12 @@ export function reason(n: bigint, p: NumPredicate): string {
       if (p.d === 8) {
         const t = Number(n % 1000n);
         return n < 1000n ? `${fmt(n)} ÷ 8 = ${n / 8n}${n % 8n ? ` remainder ${n % 8n}` : ''}` : `its last three digits make ${t}, and ${t} ${isOrIsnt(t % 8 === 0)} a multiple of 8`;
+      }
+      const parts = TWO_TESTS[p.d];
+      if (parts) {
+        // n is divisible by a·b exactly when it is divisible by a and by b (they share no factor).
+        const [a, b] = parts;
+        return `it needs both ${a} and ${b}: ${sentence(n, { op: 'div', d: a })} (${reason(n, { op: 'div', d: a })}), and ${sentence(n, { op: 'div', d: b })} (${reason(n, { op: 'div', d: b })})`;
       }
       if (p.d === 11) {
         const ds = digitsOf(n).reverse();
@@ -99,8 +112,13 @@ export function reason(n: bigint, p: NumPredicate): string {
     case 'not':
       return reason(n, p.p);
     case 'and':
-    case 'or':
-      return p.ps.map((q) => `${sentence(n, q)} (${reason(n, q)})`).join('; ');
+    case 'or': {
+      if (p.ps.length <= 3) return p.ps.map((q) => `${sentence(n, q)} (${reason(n, q)})`).join('; ');
+      // Long lists: name only the part that decides it.
+      const deciding = p.op === 'or' ? p.ps.find((q) => evalPred(n, q)) : p.ps.find((q) => !evalPred(n, q));
+      if (deciding) return `${sentence(n, deciding)} (${reason(n, deciding)})`;
+      return p.op === 'or' ? `it matches none of the ${p.ps.length} options` : `it meets all ${p.ps.length} parts`;
+    }
   }
 }
 
@@ -122,8 +140,10 @@ export function sentence(n: bigint, p: NumPredicate): string {
     case 'not':
       return sentence(n, p.p);
     case 'and':
-    case 'or':
-      return `${N} ${holds ? 'meets' : "doesn't meet"} the condition (${describe(p)})`;
+    case 'or': {
+      const d = describe(p);
+      return `${N} ${holds ? 'meets' : "doesn't meet"} the condition${d.length <= 80 ? ` (${d})` : ''}`;
+    }
   }
 }
 
@@ -192,11 +212,20 @@ export function relatedDigitSumExample(d: 3 | 9, avoid: string, seed: number): {
 
 // ------------------------------------------------------------------ per board
 
-function constructNumber(p: ConstructPayload, fill: number[]): bigint | null {
+/** The digits the learner made, or null if the fill doesn't fit the blanks. */
+function constructDigits(p: ConstructPayload, fill: number[]): number[] | null {
   const blanks = p.fixed.filter((x) => x === null).length;
   if (fill.length !== blanks || fill.some((x) => !Number.isInteger(x) || x < 0 || x > 9)) return null;
   let j = 0;
-  return BigInt(p.fixed.map((x) => (x === null ? fill[j++] : x)).join(''));
+  return p.fixed.map((x) => (x === null ? fill[j++] : (x as number)));
+}
+
+const leadingZero = (ds: number[]) => ds.length > 1 && ds[0] === 0;
+
+/** The number made, or null if the fill doesn't fit or starts with 0 (the checker never accepts that). */
+function constructNumber(p: ConstructPayload, fill: number[]): bigint | null {
+  const ds = constructDigits(p, fill);
+  return ds && !leadingZero(ds) ? BigInt(ds.join('')) : null;
 }
 
 const patternOf = (fixed: (number | null)[]) => fixed.map((x) => (x === null ? '_' : String(x))).join('');
@@ -229,19 +258,31 @@ function coachConstruct(item: Item, p: ConstructPayload, response: Response): Om
   }
 
   if (response.kind !== 'construct') return null;
-  const n = constructNumber(p, response.digits);
-  if (n === null) return null;
+  const ds = constructDigits(p, response.digits);
+  if (!ds) return null;
+  const solutionLine = () => {
+    if (single) return sols.length === 0 ? 'No digit works here.' : `${sols.length === 1 ? 'The only digit that works is' : 'Digits that work:'} ${list(sols.map((f) => f[0]))}.`;
+    if (!sols.length) return 'No way of filling the blanks works here.';
+    const one = constructNumber(p, sols[0])!;
+    return `One answer is ${fmt(one)}. There ${sols.length === 1 ? 'is 1 way' : `are ${sols.length} ways`} to fill the blanks in all.`;
+  };
+  if (leadingZero(ds)) {
+    return {
+      submitted: `You made ${ds.join('')}.`,
+      lines: [`A whole number can't start with 0, so ${ds.join('')} isn't a ${ds.length}-digit number.`, solutionLine()],
+      specific: true,
+    };
+  }
+  const n = BigInt(ds.join(''));
   const lines = [explainNumber(n, p.p)];
   if (single && digitSumRule) {
     const ks = known.length > 1 && known.length <= 9 ? ` (${known.join(' + ')})` : '';
     lines.push(`The known digits add to ${K}${ks}. The blank has to bring the total to a multiple of ${digitSumRule}.`);
-    for (const f of sols.slice(0, 3)) lines.push(`${f[0]} makes ${fmt(constructNumber(p, f)!)}, whose digits add to ${K + f[0]}.`);
+    for (const f of sols.slice(0, 4)) lines.push(`${f[0]} makes ${fmt(constructNumber(p, f)!)}, whose digits add to ${K + f[0]}.`);
+    if (sols.length > 4) lines.push(`${list(sols.slice(4).map((f) => f[0]))} work too.`);
     if (digitSumRule === 9) lines.push('Any multiple of 9 works: 18 and 27 count, not just 9.');
-  } else if (single) {
-    lines.push(sols.length === 0 ? 'No digit works here.' : `${sols.length === 1 ? 'The only digit that works is' : 'Digits that work:'} ${list(sols.map((f) => f[0]))}.`);
-  } else if (sols.length) {
-    const one = constructNumber(p, sols[0])!;
-    lines.push(`One answer is ${fmt(one)}: ${reason(one, p.p)}. There ${sols.length === 1 ? 'is 1 way' : `are ${sols.length} ways`} in all.`);
+  } else {
+    lines.push(solutionLine());
   }
   return {
     submitted: `You made ${fmt(n)}.`,
@@ -284,13 +325,17 @@ function coachRefute(item: Item, response: Response): Omit<Coaching, 'rule'> | n
     lines.push(`At ${formatTuple(t, names)} the condition doesn't hold, so it can't break the claim. ${failing.map((c) => condLine(c, t, names)).join(' ')}`);
     lines.push('A counterexample must meet the condition and still fail the conclusion.');
   } else {
-    lines.push(`At ${formatTuple(t, names)} the condition holds and so does the conclusion, so it agrees with the claim.`);
+    lines.push(
+      claim.given.length
+        ? `At ${formatTuple(t, names)} the condition holds and so does the conclusion, so it agrees with the claim.`
+        : `At ${formatTuple(t, names)} the claim holds, so this doesn't break it.`,
+    );
     lines.push(...claim.then.map((c) => condLine(c, t, names)));
   }
   if (witness) {
     lines.push(`${formatTuple(witness, names)} does break it:`);
     lines.push(...breaks(witness));
-  } else lines.push(`No value from ${fmt(lo)} to ${fmt(hi)} breaks it: the claim is true.`);
+  } else lines.push(`No ${claim.vars === 2 ? 'pair of values' : 'value'} from ${fmt(lo)} to ${fmt(hi)} breaks it: the claim is true.`);
   return { submitted: `You chose ${formatTuple(t, names)}.`, lines, specific: true };
 }
 
@@ -310,7 +355,7 @@ function coachChoice(item: Item, response: Response, result: CheckResult): Omit<
   }
   if (!specific) lines.push(item.explanation);
   const tag = result.misconception ?? chosen.misconception;
-  const note = tag ? MISCONCEPTION_NOTES[tag] : undefined;
+  const note = noteFor(item.templateId, tag);
   return { submitted: `You chose ${chosen.label}.`, lines, specific, slip: note ? `A common slip with this answer: ${note}` : undefined };
 }
 
@@ -321,7 +366,9 @@ function coachNumeric(item: Item, response: Response): Omit<Coaching, 'rule'> | 
   const lines = [`The answer is ${fmt(value)}${p.unit ? ` ${p.unit}` : ''}.`];
   const spec = p.spec;
   let specific = false;
-  if (spec.op === 'remainder') {
+  // Remainders from digit rules teach the rule, not long division: keep the item's own explanation there,
+  // and for any number too long to read at a glance.
+  if (spec.op === 'remainder' && item.skillId !== 'rem.digit-rules' && spec.n.length <= 12) {
     const n = BigInt(spec.n);
     const d = BigInt(spec.d);
     lines.push(`${fmt(n)} = ${spec.d} × ${fmt(n / d)} + ${n % d}, so the remainder is ${n % d}.`);
@@ -436,6 +483,8 @@ export function coach(item: Item, response: Response, result: CheckResult): Coac
   } catch {
     c = null;
   }
+  // A line too long to read is no help: use the item's own explanation instead.
+  if (c && [...c.lines, ...(c.example?.lines ?? [])].some((l) => l.length > MAX_LINE)) c = null;
   return c ? { ...c, rule } : fallback;
 }
 

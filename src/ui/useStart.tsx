@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { LADDER_MISSES } from '../engine/mixer';
 import { useApp, type StartResult } from '../state/store';
 import { Button, Heading, Small } from './kit';
 import { color, radius, space } from './theme';
@@ -14,6 +15,7 @@ import { color, radius, space } from './theme';
 export function useStart() {
   const active = useApp((s) => s.active);
   const finish = useApp((s) => s.finishSession);
+  const abandon = useApp((s) => s.abandonSession);
   const [pending, setPending] = useState<null | { run: () => StartResult; after?: (r: StartResult) => void }>(null);
 
   const start = (run: () => StartResult, after?: (r: StartResult) => void): StartResult => {
@@ -32,7 +34,7 @@ export function useStart() {
         <View style={styles.card} accessibilityViewIsModal>
           <Heading style={{ fontSize: 20 }}>You have a session in progress</Heading>
           <Small style={{ color: color.ink }}>
-            {active ? `${active.title}: ${active.results.length}${active.ladder ? '' : ` of ${total}`} answered.` : ''} Finish it first, or end it here. Answers you've given are kept either way.
+            {active ? `${active.title}: ${active.results.length}${active.ladder ? '' : ` of ${total}`} answered.` : ''} Finish it first, or end it here. Answers you've given are kept; anything on the current puzzle that you haven't checked yet is not.
           </Small>
           <Button
             title="Resume it"
@@ -47,7 +49,11 @@ export function useStart() {
             onPress={() => {
               const p = pending;
               setPending(null);
-              finish({ early: true });
+              // The same rule as the session's own End: every puzzle answered (or a ladder's last miss) is a normal finish.
+              if (active && active.results.length > 0) {
+                const done = (active.ladder && active.ladder.misses >= LADDER_MISSES) || (!active.ladder && active.results.length >= total);
+                finish({ early: !done });
+              } else abandon();
               if (p) {
                 const r = p.run();
                 if (r.ok) router.push('/session');

@@ -146,13 +146,15 @@ describe('quizzes', () => {
   it('the end of a check says what you can do, what needs a look, and what to play next', () => {
     const s = summarizeCheck([
       { skillId: 'div.last-digit', templateId: 'a', correct: true, hint: false },
-      { skillId: 'div.digit-sum', templateId: 'b', correct: false, hint: false, misconception: 'used-digit-sum' },
+      { skillId: 'div.digit-sum', templateId: 'rem.digit-rules/last-digits', correct: false, hint: false, misconception: 'used-digit-sum' },
+      { skillId: 'div.digit-sum', templateId: 'rem.arithmetic/choose', correct: false, hint: false, misconception: 'multiplied-instead-of-added' },
       { skillId: 'div.digit-sum', templateId: 'c', correct: true, hint: false },
     ]);
     expect(s.correct).toBe(2);
     expect(s.canDo).toEqual(['div.last-digit']);
-    expect(s.oneMoreLook[0]).toMatchObject({ skillId: 'div.digit-sum', missed: 1, of: 2 });
-    expect(s.oneMoreLook[0].notes[0]).toMatch(/3 and 9 only/);
+    expect(s.oneMoreLook[0]).toMatchObject({ skillId: 'div.digit-sum', missed: 2, of: 3 });
+    // Only notes reviewed for that family: the remainder-arithmetic note depends on the question, so it isn't shown.
+    expect(s.oneMoreLook[0].notes).toEqual(['The digit-sum test works for 3 and 9 only. Other divisors need their own test.']);
     expect(s.next).toEqual({ kind: 'repair', skillId: 'div.digit-sum' });
   });
 

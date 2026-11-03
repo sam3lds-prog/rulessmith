@@ -16,6 +16,7 @@ import { PlanView } from '../../ui/PlanView';
 import { color, font, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
 import { useNow } from '../../ui/useNow';
+import { useRecord } from '../../ui/useRecord';
 
 const DOMAIN_STATUS: Record<ExamDomain['status'], { label: string; fg: string; bg: string }> = {
   foundations: { label: 'Foundations here', fg: color.actionDeep, bg: color.actionWash },
@@ -27,6 +28,8 @@ const DOMAIN_STATUS: Record<ExamDomain['status'], { label: string; fg: string; b
 export default function Plan() {
   const now = useNow();
   const s = useApp();
+  // Answers in an unfinished check stay out of these views until it ends.
+  const rec = useRecord();
   const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
   if (!s.plan) return <Redirect href="/onboarding/placement" />;
@@ -35,8 +38,8 @@ export default function Plan() {
   const exams = p.exams;
   const examName = exams.length ? exams.map((e) => EXAMS.find((x) => x.id === e)?.name).join(' and ') : 'General math';
   const blueprints = exams.map((e) => BLUEPRINTS[e]);
-  const cov = coverage(exams, s.skills, now);
-  const due = dueReviews(s.skills, now);
+  const cov = coverage(exams, rec.skills, now);
+  const due = dueReviews(rec.skills, now);
   const banner = shouldShowBanner('plan', { adsEnabled: adsLive(s), ageBand: p.ageBand, premium: isPremium(s.entitlements, now) });
   const dateText = p.testDate ? `Test around ${formatShortDate(parseDay(p.testDate))}` : 'No test date';
   const released = TRACKS.filter((t) => t.available);
@@ -74,7 +77,7 @@ export default function Plan() {
         <Small style={{ marginBottom: space.md }}>Tap a skill to open it. The plan rebuilds itself each week from your results.</Small>
         <PlanView
           plan={s.plan}
-          skills={s.skills}
+          skills={rec.skills}
           now={now}
           onSkill={(id) => router.push(`/skill/${id}`)}
           onAlternative={(a) => {
@@ -90,7 +93,7 @@ export default function Plan() {
         <Heading>Topics available now</Heading>
         {released.map((t) => {
           const skills = SKILLS.filter((k) => k.track === t.id);
-          const secure = skills.filter((k) => ['secure', 'review'].includes(displayStatus(s.skills[k.id], now))).length;
+          const secure = skills.filter((k) => ['secure', 'review'].includes(displayStatus(rec.skills[k.id], now))).length;
           return (
             <View key={t.id} style={{ marginTop: space.md }}>
               <View style={styles.trackHead}>
@@ -100,7 +103,7 @@ export default function Plan() {
                 </Micro>
               </View>
               {skills.map((k) => (
-                <LinkRow key={k.id} title={k.name} detail={k.summary} right={<Stamp status={displayStatus(s.skills[k.id], now)} />} onPress={() => router.push(`/skill/${k.id}`)} />
+                <LinkRow key={k.id} title={k.name} detail={k.summary} right={<Stamp status={displayStatus(rec.skills[k.id], now)} />} onPress={() => router.push(`/skill/${k.id}`)} />
               ))}
             </View>
           );

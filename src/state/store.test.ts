@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { checkItem, TEMPLATE_BY_ID, type Item, type Response } from '../content';
+import { visibleRecord } from './work';
 import type { Attempt } from '../engine/types';
 
 const h = vi.hoisted(() => {
@@ -49,7 +50,8 @@ vi.mock('@react-native-async-storage/async-storage', () => {
 
 vi.mock('../analytics/pipeline', () => ({ startAnalytics: async () => undefined, uploadEvents: async () => 0, saveEventsNow: () => undefined }));
 
-vi.mock('../data/cloud', () => {
+vi.mock('../data/cloud', async () => {
+  const { SNAPSHOT_VERSION } = await vi.importActual<typeof import('../sync/merge')>('../sync/merge');
   const s = (globalThis as Record<string, any>).__server;
   const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
   return {
@@ -66,8 +68,10 @@ vi.mock('../data/cloud', () => {
       hook?.();
       const current = s.snapshots.has(u) ? (s.versions.get(u) ?? 0) : null;
       if (current !== expected) return false;
-      // The real client tags snapshots with SNAPSHOT_VERSION (data/cloud.ts); keep this in step with it.
-      s.snapshots.set(u, { v: 4, ...clone(snap as object) });
+      // Like the real client (data/cloud.ts) and server: tag with SNAPSHOT_VERSION, and refuse to lower it
+      // (supabase/migrations/20261103000000_snapshot_version_guard.sql).
+      if ((s.snapshots.get(u)?.v ?? 0) > SNAPSHOT_VERSION) throw new Error('snapshot version is older than the stored version; update the app to sync');
+      s.snapshots.set(u, { v: SNAPSHOT_VERSION, ...clone(snap as object) });
       s.versions.set(u, (expected ?? 0) + 1);
       return true;
     },
@@ -837,6 +841,53 @@ describe('paths, games, checks and practice', () => {
     h.server.versions.set('user-a', (h.server.versions.get('user-a') ?? 0) + 1);
     await m.useApp.getState().syncNow();
     expect(m.useApp.getState().quests['gate-1'].completedAt).toBe(earlier);
+  });
+
+  it('a v3 server snapshot loses its workshop objects and object purchases on sync; nothing else is lost', async () => {
+    const m = await launch();
+    onboard(m);
+    h.server.session = 'user-a';
+    await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    const snap = h.server.snapshots.get('user-a');
+    // Another device on the v3 app had stored objects, a project and an object purchase.
+    h.server.snapshots.set('user-a', {
+      ...snap,
+      v: 3,
+      grants: [{ id: 'item:fern', itemId: 'fern', source: 'purchase', at: 1, catalogVersion: 1 }],
+      project: { itemId: 'rug', at: 1 },
+      tokenLedger: [...snap.tokenLedger, { id: 'other-session', delta: 5, reason: 'session', at: 2 }, { id: 'buy:fern', delta: -15, reason: 'purchase', at: 3 }],
+      quests: { 'gate-1': { version: 1, completedAt: 7, runs: 1 } },
+    });
+    h.server.versions.set('user-a', (h.server.versions.get('user-a') ?? 0) + 1);
+    await m.useApp.getState().syncNow();
+    const s = m.useApp.getState() as unknown as Record<string, unknown>;
+    expect(s.grants).toBeUndefined();
+    expect(s.project).toBeUndefined();
+    const ledger = m.useApp.getState().tokenLedger;
+    expect(ledger.some((e) => e.id === 'buy:fern')).toBe(false);
+    expect(ledger.some((e) => e.id === 'other-session')).toBe(true);
+    expect(m.useApp.getState().quests['gate-1'].completedAt).toBe(7);
+    const after = h.server.snapshots.get('user-a');
+    expect(after.v).toBe(4);
+    expect(after).not.toHaveProperty('grants');
+    expect(after.tokenLedger.some((e: { id: string }) => e.id === 'buy:fern')).toBe(false);
+  });
+
+  it("an unfinished check's answers stay out of every view outside the session until it ends", async () => {
+    const m = await launch();
+    onboard(m);
+    const before = JSON.stringify(m.useApp.getState().skills);
+    m.useApp.getState().startQuiz('check', { skills: ['div.digit-sum'] });
+    answer(m, { correct: false });
+    const live = m.useApp.getState();
+    const shown = visibleRecord(live);
+    expect(live.attempts.length).toBe(shown.attempts.length + 1);
+    expect(JSON.stringify(shown.skills)).toBe(before);
+    // Practice with immediate feedback is shown at once.
+    m.useApp.getState().abandonSession();
+    m.useApp.getState().startQuiz('practice', { skillId: 'div.digit-sum' });
+    answer(m, { correct: false });
+    expect(visibleRecord(m.useApp.getState()).attempts.length).toBe(m.useApp.getState().attempts.length);
   });
 
   it('a session with work is never silently replaced: an answer, a hint, or anything on the board', async () => {

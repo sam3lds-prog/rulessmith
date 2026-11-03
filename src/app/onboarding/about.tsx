@@ -142,7 +142,7 @@ export default function About() {
         );
       case 'exams':
         return (
-          Q({ title: "Which exam are you preparing for?", note: "Pick any that apply. Your plan weights topics by how much each exam tests them.", children: (<>
+          Q({ title: "Which exam are you preparing for?", note: "Pick any that apply. Your plan orders topics by our own estimate of how much each exam uses them.", children: (<>
             <View style={styles.wrap}>
               {EXAMS.map((e) => (
                 <Chip

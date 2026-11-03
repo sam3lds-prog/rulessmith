@@ -120,7 +120,8 @@ export interface CheckRecord {
   correct: number;
   total: number;
   at: number;
-  missed: { skillId: string; misconception?: string }[];
+  /** templateId: only on records made since notes became per-family (older ones show no note). */
+  missed: { skillId: string; misconception?: string; templateId?: string }[];
 }
 
 /** How feedback feels. Device-level: kept when the learner changes. */

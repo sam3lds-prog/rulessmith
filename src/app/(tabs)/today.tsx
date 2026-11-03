@@ -17,6 +17,7 @@ import { Button, Eyebrow, Gap, Label, LinkRow, Micro, Plate, Screen, Small, stat
 import { color, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
 import { useNow } from '../../ui/useNow';
+import { useRecord } from '../../ui/useRecord';
 
 /**
  * Today: the open session first, then one recommended topic with a reason and
@@ -26,6 +27,8 @@ import { useNow } from '../../ui/useNow';
 export default function Today() {
   const now = useNow();
   const s = useApp();
+  // Answers in an unfinished check stay out of these views until it ends.
+  const rec = useRecord();
   const [blocked, setBlocked] = useState<null | 'no-runs' | 'empty'>(null);
   const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
@@ -33,15 +36,15 @@ export default function Today() {
 
   const exams = s.profile.exams;
   const examName = exams.length ? exams.map((e) => EXAMS.find((x) => x.id === e)?.name).join(' and ') : 'your goals';
-  const targets = todaysTargets(s.plan, s.skills, now);
-  const recommended = SKILL_BY_ID[targets[0] ?? frontier(s.skills)[0] ?? SKILLS[0].id];
-  const status = displayStatus(s.skills[recommended.id], now);
+  const targets = todaysTargets(s.plan, rec.skills, now);
+  const recommended = SKILL_BY_ID[targets[0] ?? frontier(rec.skills)[0] ?? SKILLS[0].id];
+  const status = displayStatus(rec.skills[recommended.id], now);
   const reasonText =
     targets[0] === recommended.id
       ? `Next in your ${examName} plan. You're at ${statusLabel(status)}.`
       : `A good next step: its prerequisites are in place. You're at ${statusLabel(status)}.`;
-  const due = dueReviews(s.skills, now);
-  const week = weeklyProgress(new Set(s.attempts.map((a) => dayKey(a.at))), now);
+  const due = dueReviews(rec.skills, now);
+  const week = weeklyProgress(new Set(rec.attempts.map((a) => dayKey(a.at))), now);
   const planWeek = currentWeek(s.plan, now);
   const premium = isPremium(s.entitlements, now);
   const runsLeft = s.runsLeft();

@@ -169,7 +169,7 @@ export function summarizeCheck(answers: CheckAnswer[]): CheckSummary {
     const helped = list.filter((a) => a.correct && a.hint).length;
     if (missed === 0 && helped === 0) canDo.push(skillId);
     else {
-      const notes = [...new Set(list.filter((a) => !a.correct && a.misconception).map((a) => MISCONCEPTION_NOTES[a.misconception!]).filter(Boolean))] as string[];
+      const notes = [...new Set(list.filter((a) => !a.correct && a.misconception).map((a) => noteFor(a.templateId, a.misconception)).filter(Boolean))] as string[];
       oneMoreLook.push({ skillId, missed, helped, of: list.length, notes });
     }
   }
@@ -213,5 +213,26 @@ export const MISCONCEPTION_NOTES: Record<string, string> = {
   'added-instead-of-multiplied': 'For a product, multiply the remainders (then reduce).',
   'multiplied-instead-of-added': 'For a sum, add the remainders (then reduce).',
 };
+
+/**
+ * Which notes a reviewer has checked against each family's actual questions. A
+ * tag's note is shown only for the families listed here: the same tag can mean
+ * something different elsewhere (a remainder slip is not a factor-count slip),
+ * and some notes only fit one kind of question. Add a family only after
+ * checking the note against every question it can generate.
+ */
+export const REVIEWED_NOTES: Record<string, string[]> = {
+  'div.last-digit/context': ['ends-in-zero-also-fits', 'even-means-divisible-by-5', 'five-means-even', 'five-is-enough-for-ten', 'even-is-enough-for-ten'],
+  'pf.primes/rows': ['composite-base'],
+  'pf.divisor-count/choose': ['forgot-plus-one', 'exponent-sum', 'excluded-1-and-n'],
+  'pf.gcd-lcm/choose': ['multiplied-instead-of-lcm', 'swapped-gcd-lcm', 'common-multiple-not-least', 'smaller-number-is-gcd', 'common-divisor-not-greatest'],
+  'rem.digit-rules/last-digits': ['used-digit-sum'],
+};
+
+/** The reviewed note for a tagged wrong answer in this family, if there is one. */
+export function noteFor(templateId: string | undefined, tag: string | undefined): string | undefined {
+  if (!templateId || !tag || !REVIEWED_NOTES[templateId]?.includes(tag)) return undefined;
+  return MISCONCEPTION_NOTES[tag];
+}
 
 export const skillTitle = (id: string) => SKILL_BY_ID[id]?.name ?? id;

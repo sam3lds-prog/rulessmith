@@ -43,7 +43,7 @@ export function PlanView({
         <Plate tone="warm">
           <Label>This plan doesn't fit before your test date.</Label>
           <Small style={{ color: color.ink }}>
-            It covers the {plan.order.length - plan.dropped.length} most important skills and leaves out {plan.dropped.length}:{' '}
+            It covers the {plan.order.length - plan.dropped.length} highest-priority skills (by our estimate) and leaves out {plan.dropped.length}:{' '}
             {plan.dropped.map(skillName).join(', ')}. You can change that:
           </Small>
           {onAlternative

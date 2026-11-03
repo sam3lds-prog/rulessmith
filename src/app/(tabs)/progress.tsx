@@ -12,6 +12,7 @@ import { Eyebrow, Gap, Heading, Label, LinkRow, Meter, Micro, Plate, Screen, Sma
 import { color, font, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
 import { useNow } from '../../ui/useNow';
+import { useRecord } from '../../ui/useRecord';
 
 const KIND_NAME = { check: 'Concept check', drill: 'Mixed drill', recall: 'Review', repair: 'Repair', practice: 'Guided practice' } as const;
 
@@ -25,19 +26,21 @@ function evidence(attempts: Attempt[]) {
 export default function Progress() {
   const now = useNow();
   const s = useApp();
+  // Answers in an unfinished check stay out of these views until it ends.
+  const rec = useRecord();
   const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
 
-  const statuses = SKILLS.map((k) => displayStatus(s.skills[k.id], now));
+  const statuses = SKILLS.map((k) => displayStatus(rec.skills[k.id], now));
   const secure = statuses.filter((x) => x === 'secure' || x === 'review').length;
   const practising = statuses.filter((x) => x === 'practicing').length;
-  const due = dueReviews(s.skills, now);
-  const misses30 = mistakeCounts(s.attempts, now - 30 * 86400000);
+  const due = dueReviews(rec.skills, now);
+  const misses30 = mistakeCounts(rec.attempts, now - 30 * 86400000);
   const missTotal = Object.values(misses30).reduce((a, b) => a + b, 0);
   const worst = Object.entries(misses30).sort((a, b) => b[1] - a[1])[0];
   const checks = [...s.checks].sort((a, b) => b.at - a.at).slice(0, 5);
   const bySkill = new Map<string, Attempt[]>();
-  for (const a of s.attempts) bySkill.set(a.skillId, [...(bySkill.get(a.skillId) ?? []), a]);
+  for (const a of rec.attempts) bySkill.set(a.skillId, [...(bySkill.get(a.skillId) ?? []), a]);
 
   return (
     <Screen>
@@ -100,7 +103,7 @@ export default function Progress() {
             const detail = e.total
               ? `${e.own ? `${e.ownRight} of ${e.own} right on your own` : 'Nothing on your own yet'} · ${e.helped} with the rule or a hint`
               : 'Not started';
-            return <LinkRow key={k.id} title={k.name} detail={detail} right={<Stamp status={displayStatus(s.skills[k.id], now)} />} onPress={() => router.push(`/skill/${k.id}`)} />;
+            return <LinkRow key={k.id} title={k.name} detail={detail} right={<Stamp status={displayStatus(rec.skills[k.id], now)} />} onPress={() => router.push(`/skill/${k.id}`)} />;
           })}
         </View>
       ))}

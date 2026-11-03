@@ -2,7 +2,8 @@ import Feather from '@expo/vector-icons/Feather';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { correctAnswerText, generateItem, SKILLS, SKILL_BY_ID, TRACKS, templatesForSkill } from '../../content';
+import { answerDisplay } from '../../boards/ItemScreen';
+import { generateItem, SKILLS, SKILL_BY_ID, TRACKS, templatesForSkill } from '../../content';
 import { displayStatus, secureGaps } from '../../engine/mastery';
 import { stateOf } from '../../engine/mixer';
 import { gamesForSkill, GAMES } from '../../games/registry';
@@ -14,6 +15,7 @@ import { BackLink, Body, Button, Eyebrow, Gap, Heading, Label, LinkRow, Plate, S
 import { color, font, radius, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
 import { useNow } from '../../ui/useNow';
+import { useRecord } from '../../ui/useRecord';
 
 /** One static page per skill in the web export. */
 export function generateStaticParams(): { id: string }[] {
@@ -29,7 +31,10 @@ export default function Topic() {
   const now = useNow();
   const { id } = useLocalSearchParams<{ id: string }>();
   const s = useApp();
+  // Answers in an unfinished check stay out of these views until it ends.
+  const rec = useRecord();
   const [blocked, setBlocked] = useState(false);
+  const [empty, setEmpty] = useState(false);
   const { start: startWith, sheet } = useStart();
   const skill = SKILL_BY_ID[id ?? ''];
   const example = useMemo(() => {
@@ -43,30 +48,37 @@ export default function Topic() {
   }, [skill?.id, s.flagsVersion]);
   if (!skill) return <Redirect href="/practice" />;
 
-  const st = stateOf(s.skills, skill.id);
+  const st = stateOf(rec.skills, skill.id);
   const status = displayStatus(st, now);
   const gaps = secureGaps(st);
   const cap = maxLevelFor(skill.id, s.entitlements, now);
   const games = gamesForSkill(skill.id, cap);
+  // Every family of this skill can be switched off remotely; then there is nothing to start.
+  const available = templatesForSkill(skill.id, cap).length > 0;
   const track = TRACKS.find((t) => t.id === skill.track);
-  const mine = s.attempts.filter((a) => a.skillId === skill.id);
+  const mine = rec.attempts.filter((a) => a.skillId === skill.id);
   const own = mine.filter((a) => a.support === 'independent' && !a.hintBeforeAnswer);
   const ownRight = own.filter((a) => a.correct).length;
-  const misses = mistakes(s.attempts, { skillId: skill.id }).length;
+  const misses = mistakes(rec.attempts, { skillId: skill.id }).length;
   const paths = MISSIONS.filter((m) => m.skills.includes(skill.id) && m.kind === 'play');
 
   const go = (run: () => StartResult) => {
     if (!s.profile) return router.push('/welcome');
-    startWith(run, (r) => setBlocked(!r.ok && r.reason === 'no-runs'));
+    startWith(run, (r) => {
+      setBlocked(!r.ok && r.reason === 'no-runs');
+      setEmpty(!r.ok && r.reason === 'empty');
+    });
   };
 
   return (
     <Screen
       footer={
-        <>
-          <Button title="Start guided practice" onPress={() => go(() => s.startQuiz('practice', { skillId: skill.id }))} />
-          <Button title="Take a concept check" kind="secondary" onPress={() => go(() => s.startQuiz('check', { skills: [skill.id], returnTo: skill.id }))} />
-        </>
+        available ? (
+          <>
+            <Button title="Start guided practice" onPress={() => go(() => s.startQuiz('practice', { skillId: skill.id }))} />
+            <Button title="Take a concept check" kind="secondary" onPress={() => go(() => s.startQuiz('check', { skills: [skill.id], returnTo: skill.id }))} />
+          </>
+        ) : undefined
       }
     >
       <BackLink />
@@ -89,7 +101,7 @@ export default function Topic() {
           <Label style={{ marginTop: example.ruleLens ? space.sm : 0 }}>Worked example</Label>
           <Text style={[type.body, { fontFamily: font.bodyBold, fontSize: 16 }]}>{example.prompt}</Text>
           {example.payload.kind === 'refute' ? <Small>Claim: {example.payload.claimText}</Small> : null}
-          <Small style={{ color: color.ink }}>Answer: {correctAnswerText(example)}</Small>
+          <Small style={{ color: color.ink }}>Answer: {answerDisplay(example)}</Small>
           <Small>{example.explanation}</Small>
         </Plate>
       ) : null}
@@ -116,7 +128,7 @@ export default function Topic() {
               <Feather name="chevron-right" size={18} color={color.inkFaint} />
             </Pressable>
           ))}
-          <Small>Five rounds that get harder. New topics start with the rule on screen; once you're Practicing, it's hidden.</Small>
+          <Small>Five rounds; the level rises as you go, within your current level limit. New topics start with the rule on screen; once you're Practicing, it's hidden.</Small>
         </View>
       ) : (
         <Small style={{ marginTop: space.xs }}>This topic is practised as questions: multiple choice and typed answers. Guided practice and the concept check below cover it.</Small>
@@ -125,6 +137,11 @@ export default function Topic() {
         <LinkRow key={m.id} title={`Path step: ${m.title}`} detail={s.quests[m.id]?.completedAt ? 'Done. Replay any time.' : m.goal} onPress={() => router.push(`/mission/${m.id}`)} />
       ))}
 
+      {!available || empty ? (
+        <Plate tone="warm" style={{ marginTop: space.lg }}>
+          <Small style={{ color: color.ink }}>This topic's puzzles are paused for a fix right now. Your progress is safe; try another topic and check back soon.</Small>
+        </Plate>
+      ) : null}
       {blocked ? (
         <Plate tone="warm" style={{ marginTop: space.lg }}>
           <Small style={{ color: color.ink }}>You've used today's free sessions. The concept check, reviewing mistakes and the paths are still open.</Small>
@@ -154,7 +171,7 @@ export default function Topic() {
           <Heading>Helpful first</Heading>
           <Small>Recommended, not required. You can start this topic now.</Small>
           {skill.prereqs.map((p) => (
-            <LinkRow key={p} title={SKILL_BY_ID[p]?.name ?? p} right={<Stamp status={displayStatus(s.skills[p], now)} />} onPress={() => router.push(`/skill/${p}`)} />
+            <LinkRow key={p} title={SKILL_BY_ID[p]?.name ?? p} right={<Stamp status={displayStatus(rec.skills[p], now)} />} onPress={() => router.push(`/skill/${p}`)} />
           ))}
         </>
       ) : null}

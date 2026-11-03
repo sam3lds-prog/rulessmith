@@ -148,21 +148,50 @@ describe('coaching other boards', () => {
     expect(c.lines[0]).toBe('28 = 5 × 5 + 3. 5 complete loops bring the token back to the start; 3 more steps take it to 3.');
   });
 
-  it('a tagged choice gets a reviewed note, phrased as a common slip; an untagged one does not', () => {
-    const item = makeItem({
-      kind: 'choice',
-      question: { mode: 'predicate', p: { op: 'div', d: 4 } },
-      options: [
-        { id: 'a', label: '1,234', num: '1234', misconception: 'used-only-last-digit' },
-        { id: 'b', label: '1,236', num: '1236' },
-        { id: 'c', label: '1,238', num: '1238', misconception: 'not-a-reviewed-tag' },
-      ],
-    });
-    const c = run(item, { kind: 'choice', optionId: 'a' });
-    expect(c.slip).toBe('A common slip with this answer: For 4 and 8, one last digit is not enough: use the last two or three.');
-    expect(c.lines).toContain("1234 isn't divisible by 4: its last two digits make 34, and 34 isn't a multiple of 4.");
-    expect(run(item, { kind: 'choice', optionId: 'c' }).slip).toBeUndefined();
+  it('a tagged choice gets a note only where a reviewer checked it for that family, phrased as a common slip', () => {
+    const options = [
+      { id: 'a', label: '4,375', num: '4375', misconception: 'five-means-even' },
+      { id: 'b', label: '4,372', num: '4372' },
+      { id: 'c', label: '4,370', num: '4370', misconception: 'ends-in-zero-also-fits' },
+    ];
+    const question = { mode: 'predicate' as const, p: { op: 'and' as const, ps: [{ op: 'div' as const, d: 2 }, { op: 'not' as const, p: { op: 'div' as const, d: 10 } }] } };
+    const reviewed = makeItem({ kind: 'choice', question, options }, { templateId: 'div.last-digit/context' });
+    const c = run(reviewed, { kind: 'choice', optionId: 'a' });
+    expect(c.slip).toBe('A common slip with this answer: Ending in 5 makes a number odd, not even.');
+    expect(c.lines).toContain('The answer is 4,372.');
+    // The same tag in a family nobody reviewed it for shows no note.
+    const elsewhere = makeItem({ kind: 'choice', question, options }, { templateId: 'rem.arithmetic/choose' });
+    expect(run(elsewhere, { kind: 'choice', optionId: 'a' }).slip).toBeUndefined();
   });
+
+  it('a number starting with 0 is named as such, never explained as a smaller number', () => {
+    const item = makeItem({ kind: 'construct', fixed: [null, null, null], p: { op: 'div', d: 9 }, mode: 'one' });
+    const r: Response = { kind: 'construct', digits: [0, 3, 6] };
+    expect(checkItem(item, r).correct).toBe(false);
+    const c = run(item, r);
+    expect(c.submitted).toBe('You made 036.');
+    expect(c.lines[0]).toBe("A whole number can't start with 0, so 036 isn't a 3-digit number.");
+    expect(c.lines.join(' ')).not.toMatch(/\b36 is/);
+  });
+
+  it('two-test divisors are explained as the two tests they are', () => {
+    expect(reason(124n, { op: 'div', d: 18 })).toBe(
+      "it needs both 2 and 9: 124 is divisible by 2 (it ends in 4, an even digit), and 124 isn't divisible by 9 (its digits add to 1 + 2 + 4 = 7, and 7 isn't a multiple of 9)",
+    );
+  });
+
+  it('long either-or conditions name only the part that decides it', () => {
+    const p: NumPredicate = { op: 'or', ps: [1, 2, 3, 4, 5, 6].map((r) => ({ op: 'rem' as const, d: 7, r })) };
+    expect(reason(10n, p)).toBe('10 leaves remainder 3 when divided by 7 (10 ÷ 7 = 1 remainder 3)');
+    expect(reason(14n, p)).toBe('it matches none of the 6 options');
+  });
+
+  it('lists every working digit, not just the first few', () => {
+    const c = run(makeItem({ kind: 'construct', fixed: [1, null, 2], p: { op: 'div', d: 3 }, mode: 'one' }), { kind: 'construct', digits: [1] });
+    expect(c.lines.filter((l) => / makes /.test(l)).length + (c.lines.some((l) => / work too\.$/.test(l)) ? 1 : 0)).toBeGreaterThanOrEqual(4);
+    expect(c.lines.join(' ')).toContain('9 makes 192');
+  });
+
 });
 
 describe('every family has accurate coaching or a safe fallback', () => {
@@ -221,8 +250,9 @@ describe('reasons agree with the checker', () => {
         const holds = evalPred(BigInt(n), p);
         expect(sentence(BigInt(n), p).includes("isn't"), `${n} ÷ ${d}`).toBe(!holds);
         const why = reason(BigInt(n), p);
-        if (why.includes(' a multiple of ')) expect(why.includes("isn't a multiple"), `${n} ÷ ${d}: ${why}`).toBe(!holds);
-        if (why.includes('÷')) expect(why.includes('remainder'), `${n} ÷ ${d}: ${why}`).toBe(!holds);
+        if (why.startsWith('it needs both')) expect(why.includes("isn't divisible"), `${n} ÷ ${d}: ${why}`).toBe(!holds);
+        else if (why.includes(' a multiple of ')) expect(why.includes("isn't a multiple"), `${n} ÷ ${d}: ${why}`).toBe(!holds);
+        else if (why.includes('÷')) expect(why.includes('remainder'), `${n} ÷ ${d}: ${why}`).toBe(!holds);
       }
     }
     for (let n = 1; n < 400; n += 3) {

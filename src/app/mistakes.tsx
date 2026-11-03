@@ -11,6 +11,7 @@ import { useApp } from '../state/store';
 import { BackLink, Button, Chip, Eyebrow, Gap, Label, Micro, Plate, Screen, Small, Title } from '../ui/kit';
 import { color, font, space, type } from '../ui/theme';
 import { useStart } from '../ui/useStart';
+import { useRecord } from '../ui/useRecord';
 
 const PAGE = 10;
 
@@ -39,11 +40,13 @@ const MODE_NAME: Partial<Record<SessionMode, string>> = {
 export default function Mistakes() {
   const params = useLocalSearchParams<{ skill?: string }>();
   const s = useApp();
+  // Answers in an unfinished check stay out of these views until it ends.
+  const rec = useRecord();
   const [skill, setSkill] = useState<string | undefined>(params.skill && SKILL_BY_ID[params.skill] ? params.skill : undefined);
   const [shown, setShown] = useState(PAGE);
   const { start, sheet } = useStart();
-  const counts = useMemo(() => mistakeCounts(s.attempts), [s.attempts]);
-  const list = useMemo(() => mistakes(s.attempts, { skillId: skill }), [s.attempts, skill]);
+  const counts = useMemo(() => mistakeCounts(rec.attempts), [rec.attempts]);
+  const list = useMemo(() => mistakes(rec.attempts, { skillId: skill }), [rec.attempts, skill]);
   const entries = useMemo(() => list.slice(0, shown).map(reviewEntry), [list, shown, s.flagsVersion]);
   const skillsWithMisses = Object.keys(counts).filter((id) => SKILL_BY_ID[id]);
 
