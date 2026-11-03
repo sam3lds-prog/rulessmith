@@ -6,6 +6,7 @@ import { useApp } from '../../state/store';
 import { Button, Gap, Screen, Small, Title } from '../../ui/kit';
 import { PlanView } from '../../ui/PlanView';
 import { space } from '../../ui/theme';
+import { useNow } from '../../ui/useNow';
 
 export default function OnboardingPlan() {
   const profile = useApp((s) => s.profile);
@@ -13,12 +14,13 @@ export default function OnboardingPlan() {
   const skills = useApp((s) => s.skills);
   const update = useApp((s) => s.updateProfileAndReplan);
   const saveOnDevice = useApp((s) => s.saveOnDevice);
+  const now = useNow();
   if (!profile || !plan) return <Redirect href="/" />;
 
   const cloud = !!config.supabaseUrl && policyFor(profile.ageBand).canCreateAccount;
   const save = () => {
     saveOnDevice();
-    router.replace(cloud ? '/account' : '/play');
+    router.replace(cloud ? '/account' : '/today');
   };
 
   return (
@@ -29,7 +31,7 @@ export default function OnboardingPlan() {
       <PlanView
         plan={plan}
         skills={skills}
-        now={Date.now()}
+        now={now}
         onAlternative={(a) => {
           if (a.kind === 'more-time') update({ minutesPerDay: a.minutesPerDay });
           if (a.kind === 'later-date') update({ testDate: a.date });

@@ -6,49 +6,40 @@ import { FEEL, NEUTRAL_EVENTS } from '../feel/events';
 import { GAMES } from '../games/registry';
 import { newSkillState } from '../engine/mastery';
 import { DAY_MS } from '../engine/time';
-import { CHAPTERS, MISSION_BY_ID, MISSIONS, missionSlots, missionState, nextMission, type Quests } from '../quests/chapters';
+import { MISSION_BY_ID, MISSIONS, missionSlots, missionState, nextMission, type Quests } from '../quests/chapters';
 import { drillSlots, heldOutSlots, repairSlots, summarizeCheck } from '../quizzes/policies';
-import { buy, coinBalance, grantOnce, milestoneGrants, owned, projectProgress, weekKey, weeklyProgress, weeklyRewardEntry, weeksMet } from '../rewards/ledger';
+import { tokenBalance, weekKey, weeklyProgress, weeklyRewardEntry, weeksMet } from '../rewards/ledger';
+import { migrateData, migrateSnapshot } from '../state/migrate';
 import type { TokenEntry } from '../state/types';
-import { mergeSynced, pickSynced } from '../sync/merge';
 import { INITIAL } from '../state/types';
-import { DISTRICTS, ITEM_BY_ID, ITEMS, itemForMission } from './catalog';
 
 const NOW = new Date(2026, 10, 4, 10).getTime(); // a Wednesday
-const coins = (n: number): TokenEntry[] => [{ id: 'start', delta: n, reason: 'session', at: 0 }];
 
-describe('rewards', () => {
-  it('grants an object once, whatever earns it and however often', () => {
-    let g = grantOnce([], 'bench-lamp', 'mission:gate-1', 1);
-    g = grantOnce(g, 'bench-lamp', 'mission:gate-1', 2);
-    g = grantOnce(g, 'bench-lamp', 'purchase', 3);
-    expect(g).toHaveLength(1);
-    expect(grantOnce(g, 'not-an-item', 'x', 4)).toBe(g);
-  });
-
-  it('buys with coins once, and never without enough coins', () => {
-    expect(buy(coins(5), [], 'fern', NOW)).toBeNull();
-    const r = buy(coins(40), [], 'fern', NOW)!;
-    expect(coinBalance(r.ledger)).toBe(25);
-    expect(owned(r.grants).has('fern')).toBe(true);
-    expect(buy(r.ledger, r.grants, 'fern', NOW)).toBeNull();
-    expect(buy(coins(100), [], 'bench-lamp', NOW)).toBeNull();
-  });
-
-  it('two devices buying the same object spend once after syncing', () => {
-    const a = buy(coins(40), [], 'fern', NOW)!;
-    const b = buy(coins(40), [], 'fern', NOW + 5000)!;
-    const merged = mergeSynced(pickSynced({ ...INITIAL, tokenLedger: a.ledger, grants: a.grants }), pickSynced({ ...INITIAL, tokenLedger: b.ledger, grants: b.grants }));
-    expect(coinBalance(merged.tokenLedger)).toBe(25);
-    expect(merged.grants).toHaveLength(1);
-  });
-
-  it('milestones follow from missions and weekly goals', () => {
-    expect(owned(milestoneGrants([], 1, 0, NOW)).has('bookshelf')).toBe(false);
-    const g = milestoneGrants([], 2, 1, NOW);
-    expect(owned(g).has('bookshelf')).toBe(true);
-    expect(owned(g).has('weekly-ribbon')).toBe(true);
-    expect(projectProgress(ITEM_BY_ID.bookshelf, { grants: [], coins: 0, missionsDone: 1, missionDone: () => false, weeklyGoalsMet: 0 }).text).toBe('1 of 2 missions');
+describe('tokens and the weekly goal', () => {
+  it('v4 removes workshop objects and refunds what was spent on them, keeping everything else', () => {
+    const v3 = {
+      ...INITIAL,
+      grants: [{ id: 'item:fern', itemId: 'fern', source: 'purchase', at: 1, catalogVersion: 1 }],
+      project: { itemId: 'rug', at: 1 },
+      tokenLedger: [
+        { id: 'session-1', delta: 40, reason: 'session', at: 1 },
+        { id: 'buy:fern', delta: -15, reason: 'purchase', at: 2 },
+        { id: 'weekly:2026-11-02', delta: 10, reason: 'weekly', at: 3 },
+      ],
+      quests: { 'gate-1': { version: 1, completedAt: 5, runs: 1 } },
+      settings: { previewAds: false, sound: false, haptics: true, reduceMotion: false, focus: true },
+    };
+    const d = migrateData(v3 as unknown as Record<string, unknown>, 3) as unknown as Record<string, unknown>;
+    expect(d.grants).toBeUndefined();
+    expect(d.project).toBeUndefined();
+    expect(tokenBalance(d.tokenLedger as TokenEntry[])).toBe(50);
+    expect(d.tokens).toBe(50);
+    expect((d.quests as Quests)['gate-1'].completedAt).toBe(5);
+    expect(d.settings).toEqual({ previewAds: false, sound: false, haptics: true, reduceMotion: false });
+    // A v3 server snapshot loses its objects and object purchases the same way.
+    const snap = migrateSnapshot({ v: 3, ...v3 } as unknown as Record<string, unknown>)!;
+    expect(snap).not.toHaveProperty('grants');
+    expect(snap.tokenLedger.map((e) => e.id)).toEqual(['session-1', 'weekly:2026-11-02']);
   });
 
   it('a week runs Monday to Sunday, and its goal pays once', () => {
@@ -67,14 +58,7 @@ describe('rewards', () => {
   });
 });
 
-describe('catalog and chapters', () => {
-  it('every mission has a real reward object, and every mission reward names a real mission', () => {
-    for (const m of MISSIONS) expect(itemForMission(m.id), m.id).toBeTruthy();
-    for (const item of ITEMS) if (item.earn.kind === 'mission') expect(MISSION_BY_ID[item.earn.missionId], item.id).toBeTruthy();
-    expect(new Set(ITEMS.map((i) => i.id)).size).toBe(ITEMS.length);
-    for (const c of CHAPTERS) expect(DISTRICTS.some((d) => d.id === c.districtId && d.status === 'released'), c.id).toBe(true);
-  });
-
+describe('chapters', () => {
   it('missions use real skills, templates and games', () => {
     for (const m of MISSIONS) {
       for (const s of m.skills) expect(SKILL_BY_ID[s], `${m.id} ${s}`).toBeTruthy();
@@ -162,13 +146,15 @@ describe('quizzes', () => {
   it('the end of a check says what you can do, what needs a look, and what to play next', () => {
     const s = summarizeCheck([
       { skillId: 'div.last-digit', templateId: 'a', correct: true, hint: false },
-      { skillId: 'div.digit-sum', templateId: 'b', correct: false, hint: false, misconception: 'used-digit-sum' },
+      { skillId: 'div.digit-sum', templateId: 'rem.digit-rules/last-digits', correct: false, hint: false, misconception: 'used-digit-sum' },
+      { skillId: 'div.digit-sum', templateId: 'rem.arithmetic/choose', correct: false, hint: false, misconception: 'multiplied-instead-of-added' },
       { skillId: 'div.digit-sum', templateId: 'c', correct: true, hint: false },
     ]);
     expect(s.correct).toBe(2);
     expect(s.canDo).toEqual(['div.last-digit']);
-    expect(s.oneMoreLook[0]).toMatchObject({ skillId: 'div.digit-sum', missed: 1, of: 2 });
-    expect(s.oneMoreLook[0].notes[0]).toMatch(/3 and 9 only/);
+    expect(s.oneMoreLook[0]).toMatchObject({ skillId: 'div.digit-sum', missed: 2, of: 3 });
+    // Only notes reviewed for that family: the remainder-arithmetic note depends on the question, so it isn't shown.
+    expect(s.oneMoreLook[0].notes).toEqual(['The digit-sum test works for 3 and 9 only. Other divisors need their own test.']);
     expect(s.next).toEqual({ kind: 'repair', skillId: 'div.digit-sum' });
   });
 

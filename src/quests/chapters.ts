@@ -1,7 +1,8 @@
 /**
- * Chapters and missions. A mission is a short, versioned set of puzzles with a
- * mathematical goal and a visible payoff in the workshop. Completing a mission
- * grants a cosmetic object; it never marks a skill Secure (only evidence does).
+ * Paths (chapters) and their steps (missions). A mission is a short, versioned
+ * set of puzzles with one mathematical goal. Completing one is recorded, but it
+ * never marks a skill Secure: only evidence does. Ids are stored in saved data
+ * and never change; titles may.
  *
  * Learning is never locked behind story: every mission can be played at any
  * time, in any order. The order is a recommendation. The one exception is a
@@ -41,8 +42,8 @@ export interface Mission {
   steps: MissionStep[];
   /** Number of questions for check and recall missions. */
   length?: number;
-  /** What changes in the workshop. */
-  payoff: string;
+  /** What the learner can do afterwards, in one sentence. */
+  outcome: string;
   /** Recall missions open this many hours after `after` is complete. */
   after?: string;
   waitHours?: number;
@@ -52,7 +53,8 @@ export interface Mission {
 export interface Chapter {
   id: string;
   title: string;
-  districtId: string;
+  /** The topic track the path belongs to. */
+  track: string;
   blurb: string;
   missions: Mission[];
 }
@@ -62,84 +64,84 @@ const claimText = (item: Item) => (item.payload.kind === 'refute' ? item.payload
 
 export const GATEHOUSE: Chapter = {
   id: 'gatehouse',
-  title: 'Light the Gatehouse',
-  districtId: 'gatehouse',
+  title: 'Divisibility path',
+  track: 'div',
   blurb: 'Divisibility rules you can see and use: last digits, then digit sums.',
   missions: [
     {
       id: 'gate-1',
       version: 1,
       chapterId: 'gatehouse',
-      title: 'Wake the first gate',
+      title: 'Sort by 5 and 10',
       goal: 'Use the last digit to test for 5 and 10.',
       kind: 'play',
       game: 'gates',
       support: 'guided',
       skills: ['div.last-digit'],
       steps: [{ templates: ['div.last-digit/sort'], levels: [1, 2], count: 3, accept: (i) => isDiv(i, [5, 10]) }],
-      payoff: 'The bench lamp turns on.',
+      outcome: 'You can tell at a glance whether a number is divisible by 5 or 10.',
       minutes: 2,
     },
     {
       id: 'forge-9',
       version: 1,
       chapterId: 'gatehouse',
-      title: 'Make the missing digit',
+      title: 'Missing digit: multiples of 9',
       goal: 'Use digit sums to test divisibility by 9.',
       kind: 'play',
       game: 'forge',
       support: 'guided',
       skills: ['div.digit-sum'],
       steps: [{ templates: ['div.digit-sum/construct'], levels: [1, 3], count: 4, accept: (i) => isDiv(i, [9]) }],
-      payoff: 'A small mechanism begins turning.',
+      outcome: 'You can complete a number so its digits add to a multiple of 9.',
       minutes: 3,
     },
     {
       id: 'breaker-3-9',
       version: 1,
       chapterId: 'gatehouse',
-      title: 'Break the shortcut',
+      title: 'Is every multiple of 3 a multiple of 9?',
       goal: 'Divisible by 3 does not mean divisible by 9.',
       kind: 'play',
       game: 'breaker',
       support: 'guided',
       skills: ['div.digit-sum'],
       steps: [{ templates: ['div.digit-sum/refute'], levels: [1, 3], count: 3 }],
-      payoff: 'A discovery card joins your shelf.',
+      outcome: 'You can show with one number that divisible by 3 does not mean divisible by 9.',
       minutes: 2,
     },
     {
       id: 'check-gate',
       version: 1,
       chapterId: 'gatehouse',
-      title: 'Check the idea',
+      title: 'Check last digits and digit sums',
       goal: 'Use the last-digit and digit-sum rules with them hidden.',
       kind: 'check',
       support: 'independent',
       skills: ['div.last-digit', 'div.digit-sum'],
       steps: [],
       length: 5,
-      payoff: 'Your check is recorded, and a Gatehouse token appears.',
+      outcome: 'Evidence that you can use these rules with the rule hidden.',
       minutes: 4,
     },
     {
       id: 'transfer-gate',
       version: 1,
       chapterId: 'gatehouse',
-      title: 'Use it elsewhere',
+      title: 'Use the rules on new problems',
       goal: 'Use the rules in an unfamiliar problem.',
       kind: 'transfer',
       support: 'independent',
       skills: ['div.last-digit', 'div.digit-sum'],
       steps: [{ templates: ['div.last-digit/context', 'div.digit-sum/count'], levels: [2, 3], count: 3 }],
-      payoff: 'A small telescope appears by the window.',
+      outcome: 'You can use the rules in a problem that looks different.',
       minutes: 3,
     },
     {
       id: 'recall-gate',
       version: 1,
       chapterId: 'gatehouse',
-      title: 'Remember it later',
+      title: 'Recall it a day later',
       goal: 'Recall the rules after a day away.',
       kind: 'recall',
       support: 'independent',
@@ -148,7 +150,7 @@ export const GATEHOUSE: Chapter = {
       length: 3,
       after: 'check-gate',
       waitHours: 20,
-      payoff: 'A recall bell, and a marker on your plan.',
+      outcome: 'Evidence that the rules stuck after a day away.',
       minutes: 2,
     },
   ],
@@ -156,36 +158,36 @@ export const GATEHOUSE: Chapter = {
 
 export const FOUNDRY: Chapter = {
   id: 'foundry',
-  title: 'Fire up the Foundry',
-  districtId: 'foundry',
+  title: 'Prime factors path',
+  track: 'pf',
   blurb: 'Every number breaks into the same primes, whichever way you split it.',
   missions: [
     {
       id: 'factory-1',
       version: 1,
       chapterId: 'foundry',
-      title: 'Split the first block',
+      title: 'Split numbers into primes',
       goal: 'Break numbers into their prime parts.',
       kind: 'play',
       game: 'factory',
       support: 'guided',
       skills: ['pf.factorize'],
       steps: [{ templates: ['pf.factorize/tree'], levels: [1, 3], count: 4 }],
-      payoff: 'A jar of prime tiles joins your shelf.',
+      outcome: 'You can break any number here into its primes.',
       minutes: 3,
     },
     {
       id: 'check-foundry',
       version: 1,
       chapterId: 'foundry',
-      title: 'Check your factors',
+      title: 'Check prime factors',
       goal: 'Spot primes and factorize with no help on screen.',
       kind: 'check',
       support: 'independent',
       skills: ['pf.primes', 'pf.factorize'],
       steps: [],
       length: 5,
-      payoff: 'A Foundry token appears.',
+      outcome: 'Evidence that you can factorize with the rule hidden.',
       minutes: 4,
     },
   ],
@@ -193,15 +195,15 @@ export const FOUNDRY: Chapter = {
 
 export const HARBOR: Chapter = {
   id: 'harbor',
-  title: 'Restore the Harbor clock',
-  districtId: 'harbor',
+  title: 'Remainders path',
+  track: 'rem',
   blurb: 'Remainders and cycles: complete loops change nothing.',
   missions: [
     {
       id: 'rails-1',
       version: 1,
       chapterId: 'harbor',
-      title: 'Send the first token',
+      title: 'Walk the remainder loop',
       goal: 'Find where a long walk round a loop ends.',
       kind: 'play',
       game: 'rails',
@@ -211,21 +213,21 @@ export const HARBOR: Chapter = {
         { templates: ['rem.basics/rail'], levels: [1, 2], count: 3 },
         { templates: ['rem.cycles/rail'], levels: [1, 3], count: 2 },
       ],
-      payoff: 'The harbor clock starts ticking.',
+      outcome: 'You can find where a long walk round a loop ends using the remainder.',
       minutes: 3,
     },
     {
       id: 'check-harbor',
       version: 1,
       chapterId: 'harbor',
-      title: 'Check your remainders',
+      title: 'Check remainders',
       goal: 'Find remainders and cycle positions with no help on screen.',
       kind: 'check',
       support: 'independent',
       skills: ['rem.basics', 'rem.cycles'],
       steps: [],
       length: 5,
-      payoff: 'A Harbor token appears.',
+      outcome: 'Evidence that you can find remainders with the rule hidden.',
       minutes: 4,
     },
   ],
@@ -280,7 +282,7 @@ export function nextMission(quests: Quests, now: number, preferChapter?: string)
   return undefined;
 }
 
-export const chapterForTrack = (track: string) => CHAPTERS.find((c) => c.districtId === { div: 'gatehouse', pf: 'foundry', rem: 'harbor' }[track]);
+export const chapterForTrack = (track: string) => CHAPTERS.find((c) => c.track === track);
 
 // ------------------------------------------------------------------ building a mission's puzzles
 

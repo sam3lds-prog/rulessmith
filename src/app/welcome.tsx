@@ -3,13 +3,12 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { track } from '../analytics/track';
 import { ItemScreen } from '../boards/ItemScreen';
+import { Tile } from '../boards/Tile';
 import { APP_NAME, APP_TAGLINE } from '../config';
 import { serveItem, TEMPLATES, templatesForSkill, templateVersionOf } from '../content';
 import { gameForItem } from '../games/registry';
 import { useApp } from '../state/store';
-import { Companion } from '../ui/Companion';
-import { Body, Button, Eyebrow, Gap, Heading, Screen, Small } from '../ui/kit';
-import { WorkshopScene } from '../ui/WorkshopScene';
+import { Body, Button, Gap, Heading, Screen, Small } from '../ui/kit';
 import { color, font, space } from '../ui/theme';
 
 type Stage = 'intro' | 'puzzle' | 'after';
@@ -19,16 +18,17 @@ export default function Welcome() {
   const [last, setLast] = useState<{ correct: boolean; ms: number } | null>(null);
   const setTried = useApp((s) => s.setTriedPuzzle);
   const flagsVersion = useApp((s) => s.flagsVersion);
+  // A fresh puzzle each visit, chosen once (render stays pure).
+  const [seed] = useState(() => Math.floor(Math.random() * 2 ** 30) + 1);
   // The digit-sum sort, unless it is switched off; then the nearest servable easy puzzle.
   const item = useMemo(() => {
-    const seed = Math.floor(Math.random() * 2 ** 30) + 1;
     const ids = ['div.digit-sum/sort', ...templatesForSkill('div.digit-sum', 2).map((t) => t.id), ...TEMPLATES.filter((t) => (t.minLevel ?? 1) <= 2).map((t) => t.id)];
     for (const templateId of ids) {
       const it = serveItem({ templateId, level: 2, seed, version: templateVersionOf(templateId) });
       if (it) return it;
     }
     return null;
-  }, [flagsVersion]);
+  }, [flagsVersion, seed]);
 
   if (stage === 'puzzle' && item) {
     return (
@@ -75,30 +75,33 @@ export default function Welcome() {
 
   return (
     <Screen footer={<Button title="Try a puzzle" onPress={() => (item ? setStage('puzzle') : router.push('/onboarding/about'))} accessibilityHint="Opens a 60-second puzzle" />}>
-      <Gap h={space.xl} />
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.wordmark} accessibilityRole="header">
-            {APP_NAME}.
-          </Text>
-          <Heading style={{ color: color.inkSoft, fontFamily: font.label }}>{APP_TAGLINE}</Heading>
+      <Gap h={space.xxl} />
+      <Text style={styles.wordmark} accessibilityRole="header">
+        {APP_NAME}
+      </Text>
+      <Heading style={{ color: color.inkSoft, fontFamily: font.body, marginTop: space.xs }}>{APP_TAGLINE}</Heading>
+      <Gap h={space.xxl} />
+      <View style={styles.demo} accessibilityLabel="Example: 4,872. Its digits add to 21, so it is divisible by 3 but not by 9.">
+        <View style={styles.tiles}>
+          {['4', '8', '7', '2'].map((d) => (
+            <Tile key={d} label={d} size="lg" />
+          ))}
         </View>
-        <Companion mood="curious" size={64} />
+        <Text style={styles.sum}>4 + 8 + 7 + 2 = 21</Text>
+        <Small style={{ textAlign: 'center' }}>21 is a multiple of 3, so 4,872 is divisible by 3. It isn't a multiple of 9, so 4,872 isn't divisible by 9.</Small>
       </View>
-      <Gap h={space.xl} />
-      <WorkshopScene owned={new Set()} />
-      <Gap h={space.lg} />
-      <Eyebrow>A workshop of ideas</Eyebrow>
-      <Body style={{ marginTop: space.xs }}>
-        Every rule you figure out adds something to your workshop. The first one lights the lamp.
-      </Body>
+      <Gap h={space.xxl} />
+      <Body>Learn a rule from a short example, use it in puzzles that get harder, and check what you can do with the rule hidden. It starts with number properties: the divisibility, prime and remainder rules GMAT and GRE quant lean on. More topics are planned.</Body>
       <Gap h={space.sm} />
-      <Body>Number-property puzzles for GMAT and GRE quant. Try one now, no sign-up. It takes about a minute.</Body>
+      <Small>Try one puzzle first. No sign-up; it takes about a minute.</Small>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  wordmark: { fontFamily: font.display, fontSize: 48, lineHeight: 52, letterSpacing: -1, color: color.ink },
+  wordmark: { fontFamily: font.display, fontSize: 40, lineHeight: 46, letterSpacing: -1.2, color: color.ink },
+  demo: { alignItems: 'center', gap: space.md },
+  tiles: { flexDirection: 'row', gap: space.sm },
+  sum: { fontFamily: font.num, fontSize: 22, color: color.actionDeep },
   big: { fontFamily: font.display, fontSize: 32, lineHeight: 36, letterSpacing: -0.6, color: color.ink },
 });

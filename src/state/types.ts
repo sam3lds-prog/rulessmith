@@ -9,7 +9,6 @@ import type { BoardDraft } from '../content/types';
 import type { PlacementState } from '../engine/placement';
 import type { QuestRecord } from '../quests/chapters';
 import type { CheckSummary, QuizKind } from '../quizzes/policies';
-import type { Grant } from '../rewards/ledger';
 import type { Attempt, DisplayStatus, JourneyPlan, Profile, SessionMode, SkillState, Slot, Support } from '../engine/types';
 import { EMPTY_ENTITLEMENTS, type Entitlements } from '../monetization/entitlements';
 
@@ -79,6 +78,10 @@ export interface ActiveSession {
   quiz?: QuizKind;
   /** after-set: no verdict until the end (concept checks and drills). */
   feedback: 'immediate' | 'after-set';
+  /** The topic this session was started from, so the recap can lead back to it. */
+  returnTo?: string;
+  /** The game chosen on a topic page, if any. */
+  game?: string;
 }
 
 export interface Recap {
@@ -104,8 +107,8 @@ export interface Recap {
   check?: CheckSummary;
   /** The attempts of this session, for the error review. */
   attemptIds: string[];
-  /** What this session earned. */
-  rewards: { coins: number; items: string[] };
+  /** The topic the session was started from, if any. */
+  returnTo?: string;
 }
 
 /** One finished check, drill or recall set. Kept so the plan can show what was checked and when. */
@@ -117,7 +120,8 @@ export interface CheckRecord {
   correct: number;
   total: number;
   at: number;
-  missed: { skillId: string; misconception?: string }[];
+  /** templateId: only on records made since notes became per-family (older ones show no note). */
+  missed: { skillId: string; misconception?: string; templateId?: string }[];
 }
 
 /** How feedback feels. Device-level: kept when the learner changes. */
@@ -126,8 +130,6 @@ export interface FeelSettings {
   haptics: boolean;
   /** Show end states at once, with no movement. The device's own setting also applies. */
   reduceMotion: boolean;
-  /** Quiet scenery: no ambient animation, the same boards and learning path. */
-  focus: boolean;
 }
 
 export interface ContentReport {
@@ -149,7 +151,7 @@ export interface DailyResult {
 export interface TokenEntry {
   id: string;
   delta: number;
-  reason: 'session' | 'daily' | 'bonus-run' | 'carried-over' | 'purchase' | 'weekly';
+  reason: 'session' | 'daily' | 'bonus-run' | 'carried-over' | 'weekly';
   at: number;
 }
 
@@ -235,11 +237,7 @@ export interface Data {
   reports: ContentReport[];
   /** Mission progress by mission id. */
   quests: Record<string, QuestRecord>;
-  /** Workshop objects owned (idempotent by grant id). */
-  grants: Grant[];
   checks: CheckRecord[];
-  /** The workshop project the learner is working toward. */
-  project?: { itemId: string; at: number };
   /** Device-level. */
   settings: { previewAds: boolean } & FeelSettings;
   placement?: PlacementProgress;
@@ -280,10 +278,8 @@ export const INITIAL: Data = {
   checkpoints: [],
   reports: [],
   quests: {},
-  grants: [],
   checks: [],
-  project: undefined,
-  settings: { previewAds: false, sound: true, haptics: true, reduceMotion: false, focus: false },
+  settings: { previewAds: false, sound: true, haptics: true, reduceMotion: false },
   account: { mode: 'none' },
 };
 

@@ -1,6 +1,8 @@
+import { router } from 'expo-router';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { coach } from '../coach/explain';
 import { checkItem, correctAnswerText } from '../content/check';
 import { describe, fmt } from '../content/format';
 import type { BoardDraft, CheckResult, Item, Response } from '../content/types';
@@ -8,7 +10,6 @@ import type { Support } from '../engine/types';
 import { feel } from '../feel/director';
 import { GAMES, type GameId } from '../games/registry';
 import type { AnswerRecord, ItemProgress } from '../state/types';
-import { Companion, type Mood } from '../ui/Companion';
 import { Body, Button, Eyebrow, Gap, Heading, Label, Small } from '../ui/kit';
 import { color, depth, font, MAX_WIDTH, radius, space, type } from '../ui/theme';
 import { ChoiceBoard, ConstructBoard, FactorBoard, NumericBoard, RailBoard, RefuteBoard, SortBoard } from './boards';
@@ -31,10 +32,12 @@ const HEARTBEAT_MS = 10_000;
  * restored from `initialProgress`, so an interruption can't turn a helped
  * answer into an unaided one.
  *
- * `game` dresses the board as one of the games (Number Forge and so on);
- * grading is unchanged. With `feedback="after-set"` (concept checks and
- * drills) nothing on screen, in sound or from the companion hints at
- * correctness: the answer is saved and the verdicts come at the end.
+ * `game` frames the board as one of the games (Missing Digit and so on);
+ * grading is unchanged. After a wrong answer with immediate feedback, the
+ * coaching layer explains this particular answer (coach/explain.ts), and
+ * `onRelated` offers a fresh guided puzzle of the same kind. With
+ * `feedback="after-set"` (concept checks and drills) nothing on screen or in
+ * sound hints at correctness: the answer is saved and the verdicts come at the end.
  */
 export function ItemScreen({
   item,
@@ -51,14 +54,20 @@ export function ItemScreen({
   game = null,
   eyebrow,
   feedback = 'immediate',
+  onRelated,
+  topicId,
 }: {
   item: Item;
   support: Support;
   header?: ReactNode;
   game?: GameId | null;
-  /** A short line above the title, e.g. "Gatehouse · learn through play". */
+  /** A short line above the title, e.g. "Digit sums · rule on screen". */
   eyebrow?: string;
   feedback?: 'immediate' | 'after-set';
+  /** After a wrong answer: add a fresh related puzzle next. Returns false if it couldn't. */
+  onRelated?: () => boolean;
+  /** The skill, for "See the topic" after a wrong answer. */
+  topicId?: string;
   /** Ignored unless it belongs to this item. */
   initialProgress?: ItemProgress;
   onProgress?: (p: ItemProgress) => void;
@@ -79,27 +88,32 @@ export function ItemScreen({
   const [ruleRevealed, setRuleRevealed] = useState(restored?.ruleRevealed ?? false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reported, setReported] = useState(false);
+  const [relatedAdded, setRelatedAdded] = useState(false);
   const [elapsed, setElapsed] = useState(restored?.activeMs ?? 0);
-  const firstSeenAt = useRef(restored?.firstSeenAt ?? Date.now());
+  // Read the clock once, in state initialisers, so render stays pure.
+  const [firstSeenAt] = useState(() => restored?.firstSeenAt ?? Date.now());
+  const [openedAt] = useState<number | null>(() => (AppState.currentState === 'background' ? null : Date.now()));
   // Active time: what was banked before, plus the current foreground stretch.
   const banked = useRef(restored?.activeMs ?? 0);
-  const since = useRef<number | null>(AppState.currentState === 'background' ? null : Date.now());
+  const since = useRef<number | null>(openedAt);
   const scroll = useRef<ScrollViewInstance>(null);
   const p = item.payload;
   const locked = result !== null;
   const lensOpen = guided || ruleRevealed;
   const showVerdict = feedback === 'immediate';
   const g = game ? GAMES[game] : null;
-  const mood: Mood = locked ? (showVerdict ? (result!.correct ? 'pleased' : 'calm') : 'curious') : hints > 0 || ruleRevealed ? 'thinking' : 'curious';
 
   const activeMs = () => banked.current + (since.current !== null ? Date.now() - since.current : 0);
 
   const latest = useRef({ draft, hints, ruleRevealed, locked });
-  latest.current = { draft, hints, ruleRevealed, locked };
+  // Kept current after each render (not during it); the saves below read it.
+  useEffect(() => {
+    latest.current = { draft, hints, ruleRevealed, locked };
+  });
   const report = () => {
     const l = latest.current;
     if (l.locked || !onProgress) return;
-    onProgress({ itemId: item.id, draft: l.draft, hints: l.hints, ruleRevealed: l.ruleRevealed, firstSeenAt: firstSeenAt.current, activeMs: activeMs() });
+    onProgress({ itemId: item.id, draft: l.draft, hints: l.hints, ruleRevealed: l.ruleRevealed, firstSeenAt: firstSeenAt, activeMs: activeMs() });
   };
 
   // Save on every change to the work, including the first view (so first-seen time survives).
@@ -154,7 +168,7 @@ export function ItemScreen({
       ruleShown: lensOpen,
       support,
       ms,
-      firstSeenAt: firstSeenAt.current,
+      firstSeenAt: firstSeenAt,
       response,
       misconception: r.misconception,
       result: r,
@@ -198,6 +212,59 @@ export function ItemScreen({
   })();
 
 
+  // After a wrong answer: the learner's own answer, the rule, a worked explanation of this
+  // answer (or the item's verified explanation), another example, and what to do next.
+  function coaching() {
+    if (!result || !response) return null;
+    const c = coach(item, response, result);
+    return (
+      <View style={{ gap: space.sm }}>
+        <Text style={[type.body, { fontFamily: font.bodyBold, fontSize: 16 }]}>{c.submitted}</Text>
+        {result.feedback ? <Small style={{ color: color.ink }}>{result.feedback}</Small> : null}
+        {!c.specific && p.kind !== 'sort' ? (
+          <Label>
+            Answer: <Text style={{ fontFamily: font.bodyBold }}>{answerDisplay(item)}</Text>
+          </Label>
+        ) : null}
+        {c.rule && !lensOpen ? <Small style={{ color: color.ink }}>Rule: {c.rule}</Small> : null}
+        {c.lines.map((l, i) => (
+          <Body key={i} style={{ fontSize: 15, lineHeight: 22 }}>
+            {l}
+          </Body>
+        ))}
+        {c.slip ? <Small>{c.slip}</Small> : null}
+        {c.example ? (
+          <View style={styles.example}>
+            <Label>{c.example.title}</Label>
+            {c.example.lines.map((l, i) => (
+              <Small key={i} style={{ color: color.ink }}>
+                {l}
+              </Small>
+            ))}
+          </View>
+        ) : null}
+        {onRelated && !relatedAdded ? (
+          <Button
+            title="Try a related problem next"
+            kind="secondary"
+            onPress={() => {
+              if (onRelated()) {
+                setRelatedAdded(true);
+                onContinue();
+              }
+            }}
+            accessibilityHint="Adds a fresh puzzle of the same kind, with the rule on screen. This answer stays as it is."
+          />
+        ) : null}
+        {topicId ? (
+          <Pressable accessibilityRole="link" onPress={() => router.push(`/skill/${topicId}`)} style={styles.inlineLink}>
+            <Text style={[type.label, { color: color.action }]}>See the topic</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <ScrollView ref={scroll} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -210,13 +277,12 @@ export function ItemScreen({
                 {g ? <Text style={styles.gameTitle}>{g.name}</Text> : null}
                 {g ? <Small>{g.tagline}</Small> : null}
               </View>
-              {!compact ? <Companion mood={mood} size={52} /> : null}
             </View>
           ) : null}
           <View style={styles.metaRow}>
             {!compact ? (
               <View style={[styles.mode, guided ? styles.modeGuided : styles.modeOwn]}>
-                <Text style={[type.micro, { color: guided ? color.actionDeep : color.gold, fontFamily: font.label }]}>
+                <Text style={[type.micro, { color: guided ? color.actionDeep : color.ink, fontFamily: font.label }]}>
                   {guided ? 'Practice with the rule' : 'On your own'}
                 </Text>
               </View>
@@ -277,26 +343,18 @@ export function ItemScreen({
 
           {locked && result && showVerdict ? (
             <View style={[styles.feedback, result.correct ? styles.feedbackRight : styles.feedbackWrong]} accessibilityLiveRegion="polite">
-              <Heading style={{ color: result.correct ? color.right : color.wrong }}>
-                {result.correct ? 'Right.' : 'Not quite.'}
-              </Heading>
-              {!result.correct && result.feedback ? <Small style={{ color: color.ink }}>{result.feedback}</Small> : null}
-              {!result.correct && p.kind !== 'sort' ? (
-                <Label>
-                  Answer: <Text style={{ fontFamily: font.bodyBold }}>{answerDisplay(item)}</Text>
-                </Label>
-              ) : null}
-              {!compact ? (
-                <>
-                  <Body style={{ fontSize: 16, lineHeight: 24 }}>{item.explanation}</Body>
-                  {onReport ? (
-                    <Pressable accessibilityRole="button" onPress={() => setReportOpen(true)} disabled={reported} style={styles.inlineLink}>
-                      <Text style={[type.small, { color: reported ? color.inkFaint : color.action }]}>
-                        {reported ? 'Thanks. This puzzle has been reported.' : 'Report a problem with this puzzle'}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </>
+              <Heading style={{ color: result.correct ? color.right : color.wrong }}>{result.correct ? 'Right.' : 'Not quite.'}</Heading>
+              {result.correct || compact ? (
+                !compact ? <Body style={{ fontSize: 16, lineHeight: 24 }}>{item.explanation}</Body> : null
+              ) : (
+                coaching()
+              )}
+              {!compact && onReport ? (
+                <Pressable accessibilityRole="button" onPress={() => setReportOpen(true)} disabled={reported} style={styles.inlineLink}>
+                  <Text style={[type.small, { color: reported ? color.inkFaint : color.action }]}>
+                    {reported ? 'Thanks. This puzzle has been reported.' : 'Report a problem with this puzzle'}
+                  </Text>
+                </Pressable>
               ) : null}
             </View>
           ) : null}
@@ -399,7 +457,7 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 24 },
   mode: { borderRadius: radius.sm, paddingHorizontal: space.sm, paddingVertical: 3 },
   modeGuided: { backgroundColor: color.actionWash },
-  modeOwn: { backgroundColor: color.goldWash },
+  modeOwn: { backgroundColor: color.paperDeep },
   lens: {
     backgroundColor: color.surface,
     borderRadius: radius.sm,
@@ -417,12 +475,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md,
   },
   inlineLink: { alignSelf: 'flex-start', paddingVertical: space.sm, minHeight: 40, justifyContent: 'center' },
-  feedback: { marginTop: space.lg, borderRadius: radius.lg, borderWidth: 1.5, padding: space.lg, gap: space.sm },
-  feedbackRight: { backgroundColor: color.rightWash, borderColor: color.right },
-  feedbackWrong: { backgroundColor: color.wrongWash, borderColor: color.wrong },
+  feedback: { marginTop: space.lg, borderRadius: radius.lg, borderWidth: 1, borderLeftWidth: 5, padding: space.lg, gap: space.sm, backgroundColor: color.surface },
+  feedbackRight: { borderColor: color.rule, borderLeftColor: color.right },
+  feedbackWrong: { borderColor: color.rule, borderLeftColor: color.wrong },
+  example: { borderLeftWidth: 3, borderLeftColor: color.ruleStrong, paddingLeft: space.md, gap: 4, marginTop: space.xs },
   feedbackNeutral: { backgroundColor: color.surface, borderColor: color.rule },
   gameHead: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.xs },
-  gameTitle: { fontFamily: font.display, fontSize: 28, lineHeight: 34, color: color.ink },
+  gameTitle: { fontFamily: font.display, fontSize: 24, lineHeight: 30, letterSpacing: -0.4, color: color.ink },
   mold: {
     backgroundColor: color.surface,
     borderRadius: radius.lg,
@@ -438,12 +497,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -12,
     alignSelf: 'center',
-    backgroundColor: color.goldWash,
+    backgroundColor: color.actionWash,
     borderRadius: radius.sm,
     paddingHorizontal: space.md,
     paddingVertical: 3,
   },
-  moldTagText: { fontFamily: font.label, fontSize: 13, color: color.gold },
+  moldTagText: { fontFamily: font.label, fontSize: 13, color: color.actionDeep },
   representation: { backgroundColor: color.paper, borderRadius: radius.sm, paddingVertical: space.sm, alignItems: 'center' },
   representationText: { fontFamily: font.num, fontSize: 20, color: color.ink, fontVariant: ['tabular-nums'] },
   footerWrap: { borderTopWidth: 1, borderTopColor: color.rule, backgroundColor: color.paper },

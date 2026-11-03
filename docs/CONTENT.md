@@ -10,7 +10,9 @@ Math practice grows by adding **template families**, not by writing questions on
 - **Primes and factors** (5): spotting primes, prime factorization, counting factors, GCD and LCM, squares and cubes.
 - **Remainders** (5): basics, remainders from digits, remainder arithmetic, cycles and units digits, working backwards.
 
-Four families feed the games: `div.digit-sum/refute` (Rule Breaker claims about 3 and 9), `pf.factorize/tree` (Factor Factory), `rem.basics/rail` and `rem.cycles/rail` (Remainder Rails). Chapter missions name templates and levels in `src/quests/chapters.ts`; if you change or retire a template a mission uses, update the mission and bump its `version`.
+Games are chosen per topic from the board each family uses (`src/games/registry.ts`): sort → Pattern Sort, construct → Missing Digit, refute → Rule Detective, factor → Factor Split, rail → Remainder Loop; choice and numeric families are practised as questions. Paths name templates and levels in `src/quests/chapters.ts`; if you change or retire a template a path uses, update the path step and bump its `version`.
+
+Coaching (`src/coach/explain.ts`) reads a family's structured payload, so a new family gets response-specific explanations when it uses an existing payload shape; otherwise it falls back to the family's own explanation, which the audit already checks. If you add a misconception tag to a distractor, add a reviewed note to `MISCONCEPTION_NOTES`, or it won't be shown.
 
 The skill list is a draft for the content reviewer (a Phase 0 task in the plan). Exam weights in `src/content/curriculum.ts` are editorial estimates and should be checked against the official GMAC, ETS, College Board and ACT outlines.
 

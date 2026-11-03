@@ -50,7 +50,11 @@ export type SessionMode =
   /** A mixed exam drill across mapped skills. */
   | 'drill'
   /** A short guided repair after a missed check. */
-  | 'repair';
+  | 'repair'
+  /** A game chosen on a topic page: that skill's puzzles in one board style. */
+  | 'game'
+  /** Guided practice on one topic: the rule stays on screen, feedback after each answer. */
+  | 'practice';
 
 /**
  * How an item is shown.
@@ -135,7 +139,25 @@ export interface Slot {
   seed: number;
   band: Band;
   support: Support;
-  reason: 'target' | 'review' | 'stretch' | 'checkpoint' | 'challenge' | 'ladder' | 'daily' | 'placement' | 'try' | 'quest' | 'check' | 'drill' | 'recall' | 'repair';
+  reason:
+    | 'target'
+    | 'review'
+    | 'stretch'
+    | 'checkpoint'
+    | 'challenge'
+    | 'ladder'
+    | 'daily'
+    | 'placement'
+    | 'try'
+    | 'quest'
+    | 'check'
+    | 'drill'
+    | 'recall'
+    | 'repair'
+    | 'game'
+    | 'practice'
+    /** A fresh guided puzzle added after a wrong answer, from the same family. */
+    | 'related';
 }
 
 export interface PlanWeek {

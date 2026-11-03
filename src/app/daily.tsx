@@ -9,10 +9,11 @@ import { dayKey } from '../engine/time';
 import { dailySlot, useApp } from '../state/store';
 import { BackLink, Body, Button, Gap, Plate, Screen, Small, Title } from '../ui/kit';
 import { color, font, space } from '../ui/theme';
+import { useNow } from '../ui/useNow';
 
 /** The free daily puzzle. Works without an account, on the web too (it is the shareable growth loop). */
 export default function Daily() {
-  const day = dayKey(Date.now());
+  const day = dayKey(useNow());
   const done = useApp((s) => s.daily[day]);
   const profile = useApp((s) => s.profile);
   const flagsVersion = useApp((s) => s.flagsVersion);
@@ -34,7 +35,7 @@ export default function Daily() {
 
   if (playing && !item) {
     return (
-      <Screen footer={<Button title="Back to Play" onPress={() => router.replace(profile ? '/play' : '/welcome')} />}>
+      <Screen footer={<Button title="Back to Today" onPress={() => router.replace(profile ? '/today' : '/welcome')} />}>
         <BackLink />
         <Title>No daily puzzle today</Title>
         <Gap />
@@ -76,7 +77,7 @@ export default function Daily() {
   };
 
   return (
-    <Screen footer={<Button title={profile ? 'Back to Play' : 'Build my plan'} onPress={() => router.replace(profile ? '/play' : '/welcome')} />}>
+    <Screen footer={<Button title={profile ? 'Back to Today' : 'Build my plan'} onPress={() => router.replace(profile ? '/today' : '/welcome')} />}>
       <BackLink />
       <Small>Daily puzzle</Small>
       <Title>{done?.correct ? 'Solved.' : 'Done for today.'}</Title>
@@ -90,7 +91,7 @@ export default function Daily() {
       ) : null}
       <Gap />
       <Body>A new puzzle arrives tomorrow. Everyone gets the same one.</Body>
-      {done ? <Small style={{ marginTop: space.sm, color: color.gold }}>+3 Workshop Coins</Small> : null}
+      {done ? <Small style={{ marginTop: space.sm }}>+3 tokens</Small> : null}
     </Screen>
   );
 }

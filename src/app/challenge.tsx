@@ -7,6 +7,7 @@ import { useApp } from '../state/store';
 import { useStart } from '../ui/useStart';
 import { BackLink, Body, Button, Chip, Gap, Heading, OptionRow, Plate, Screen, Small, Title } from '../ui/kit';
 import { color, space } from '../ui/theme';
+import { useNow } from '../ui/useNow';
 
 const RANGES: { label: string; detail: string; levels: [number, number] }[] = [
   { label: 'Warm-up', detail: 'Levels 1 to 3', levels: [1, 3] },
@@ -16,12 +17,12 @@ const RANGES: { label: string; detail: string; levels: [number, number] }[] = [
 
 /** Challenge builder: the learner picks topics and difficulty; the app generates the run. */
 export default function Challenge() {
+  const now = useNow();
   const s = useApp();
   const [picked, setPicked] = useState<string[]>([]);
   const [range, setRange] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const { start: startWith, sheet } = useStart();
-  const now = Date.now();
   const challenge = ownsChallenge(s.entitlements, now);
 
   const allowed = (i: number) => {

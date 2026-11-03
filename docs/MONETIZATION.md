@@ -11,15 +11,15 @@
 | `pack_remainders` | non-consumable | $4.99 | Remainders: levels 1 to 7, unlimited runs |
 | `pack_challenge_top` | non-consumable | $6.99 | "Hardest Levels Challenge": Challenge mode at levels 8 to 10 |
 
-Free: the daily puzzle, 3 runs a day, levels 1 to 3 of every track, every hint and explanation. Chapter missions, concept checks, repairs and recall never use a run; plan sessions, skill practice, ladders and the mixed exam drill do. Premium includes every pack.
+Free: the daily puzzle, 3 runs a day, levels 1 to 3 of every track, every hint and explanation. Paths, concept checks, repairs, reviews and practising one mistake never use a run; today's session, games, guided practice on a topic, ladders, challenges and the mixed drill do. Premium includes every pack.
 
-**Workshop Coins** (called tokens in the code) are earned: 5 per finished session, 3 per daily puzzle, 10 for a weekly goal. They buy workshop objects (10 to 35 coins) or a bonus run (10). They are never sold, and nothing they buy changes mastery: knowledge seals come only from Secure skills.
+**Tokens** are earned: 5 per finished session, 3 per daily puzzle, 10 for a weekly goal. They buy one more session (10) on a day the free ones are used. They are never sold and never touch mastery. (The workshop shop that briefly spent them on objects was removed; those spends were refunded in the v4 migration.)
 
 Keep $7.99 / $49.99 as the comparison arm once traffic allows a price test.
 
 The hardest-levels pack was called "700+ Challenge" (`pack_challenge_700`). That read like a score guarantee, and 700 is on the old GMAT scale, so it was renamed before any store product existed. Saved purchases are mapped to the new id (`RENAMED_PRODUCTS`). Product names describe difficulty, never a score.
 
-**First paid test (per the Nov 2026 review):** sell monthly and yearly Premium only. Packs and Exam Sprint wait until interviews ask for them; ads stay off until their effect on return has been measured. Earned coins for an extra run are fine; nothing bought may change mastery.
+**First paid test (per the Nov 2026 review):** sell monthly and yearly Premium only. Packs and Exam Sprint wait until interviews ask for them; ads stay off until their effect on return has been measured. Earned tokens for an extra run are fine; nothing bought may change mastery.
 
 ## Connecting real purchases (Phase 4)
 
@@ -40,7 +40,7 @@ Rules live in `src/policy/ads.ts` and are tested. The placements are already in 
 | Placement | Where | Format |
 | --- | --- | --- |
 | Session-break card | recap screen, under the learning recap, at most ~40% of the screen; the learner's own Continue button sits outside it | AdMob native (`NativeAdView`), with the "Ad" badge and AdChoices icon; nothing overlaps it |
-| Banner | bottom of the Plan and Practice tabs only (never Play, the Workshop or a recap) | AdMob adaptive banner |
+| Banner | bottom of the My plan and Practice tabs only (never Today, Progress, a puzzle or a recap) | AdMob adaptive banner |
 | Rewarded | "Watch a short ad for a bonus run", only when the learner taps | AdMob rewarded; grant only on the earned-reward callback |
 
 Never: interstitials, app-open ads, ads on the puzzle board, mid-session, after a miss, during a timed challenge, in the first three sessions, for anyone under 18, or for Premium. Non-personalized by default; personalized only if the learner allows tracking on iOS.

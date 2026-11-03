@@ -31,14 +31,13 @@ function seq(parts, gapMs = 0) {
   parts.forEach((p, i) => p.forEach((v, j) => (out[i * gap + j] += v)));
   return out;
 }
-const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, A4 = 440, F4 = 349.23;
+const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, A4 = 440, F4 = 349.23;
 const sounds = {
   tick: tone(1760, 45, { amp: 0.18, decay: 9 }),
   pop: tone(620, 110, { amp: 0.28, decay: 7, glideTo: 880 }),
   rise: seq([tone(C5, 220, { amp: 0.26 }), tone(G5, 320, { amp: 0.26 })], 110),
   note: seq([tone(A4, 260, { amp: 0.2, decay: 5 }), tone(F4, 300, { amp: 0.16, decay: 5 })], 120),
   chime: seq([tone(C5, 420), tone(E5, 420), tone(G5, 420), tone(C6, 700, { decay: 4 })], 140),
-  reveal: seq([tone(G5, 600, { amp: 0.22 }), tone(C6, 600, { amp: 0.22 }), tone(E6, 700, { amp: 0.2 }), tone(C6, 1100, { amp: 0.24, decay: 3 })], 260),
 };
 for (const [name, s] of Object.entries(sounds)) fs.writeFileSync(`assets/sounds/${name}.wav`, wav(Array.from(s)));
 console.log(Object.keys(sounds).map((k) => `${k}: ${fs.statSync(`assets/sounds/${k}.wav`).size} bytes`).join('\n'));

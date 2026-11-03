@@ -4,8 +4,7 @@
   "main": "expo-router/entry",
   "dependencies": {
     "@expo-google-fonts/atkinson-hyperlegible": "^0.4.1",
-    "@expo-google-fonts/fredoka": "^0.4.1",
-    "@expo-google-fonts/nunito-sans": "^0.4.2",
+    "@expo-google-fonts/inter": "^0.4.2",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.118.0",
@@ -30,6 +29,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~58.0.4",
     "typescript": "~6.0.3",
     "vitest": "^5.0.5"
   },
@@ -45,7 +46,8 @@
     "content:audit": "vitest run src/content",
     "content:sample": "CONTENT_SAMPLE=1 vitest run src/dev/sample-items.test.ts --silent=false",
     "content:worksheet": "CONTENT_SAMPLE=1 vitest run src/dev/review-sheet.test.ts",
-    "content:signoff": "SIGNOFF_REPORT=1 vitest run src/content/signoff.test.ts --silent=false"
+    "content:signoff": "SIGNOFF_REPORT=1 vitest run src/content/signoff.test.ts --silent=false",
+    "lint": "expo lint"
   },
   "private": true
 }

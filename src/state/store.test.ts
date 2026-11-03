@@ -5,7 +5,8 @@
  * overwriting, and a hint or a half-done puzzle survives a restart.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { checkItem, type Item, type Response } from '../content';
+import { checkItem, TEMPLATE_BY_ID, type Item, type Response } from '../content';
+import { visibleRecord } from './work';
 import type { Attempt } from '../engine/types';
 
 const h = vi.hoisted(() => {
@@ -49,7 +50,8 @@ vi.mock('@react-native-async-storage/async-storage', () => {
 
 vi.mock('../analytics/pipeline', () => ({ startAnalytics: async () => undefined, uploadEvents: async () => 0, saveEventsNow: () => undefined }));
 
-vi.mock('../data/cloud', () => {
+vi.mock('../data/cloud', async () => {
+  const { SNAPSHOT_VERSION } = await vi.importActual<typeof import('../sync/merge')>('../sync/merge');
   const s = (globalThis as Record<string, any>).__server;
   const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
   return {
@@ -66,7 +68,10 @@ vi.mock('../data/cloud', () => {
       hook?.();
       const current = s.snapshots.has(u) ? (s.versions.get(u) ?? 0) : null;
       if (current !== expected) return false;
-      s.snapshots.set(u, { v: 2, ...clone(snap as object) });
+      // Like the real client (data/cloud.ts) and server: tag with SNAPSHOT_VERSION, and refuse to lower it
+      // (supabase/migrations/20261103000000_snapshot_version_guard.sql).
+      if ((s.snapshots.get(u)?.v ?? 0) > SNAPSHOT_VERSION) throw new Error('snapshot version is older than the stored version; update the app to sync');
+      s.snapshots.set(u, { v: SNAPSHOT_VERSION, ...clone(snap as object) });
       s.versions.set(u, (expected ?? 0) + 1);
       return true;
     },
@@ -670,7 +675,7 @@ describe('deleting', () => {
   });
 });
 
-describe('the workshop loop', () => {
+describe('paths, games, checks and practice', () => {
   function playActive(m: StoreModule, opts: { correct?: boolean } = {}) {
     for (;;) {
       answer(m, opts);
@@ -679,7 +684,7 @@ describe('the workshop loop', () => {
     return m.useApp.getState().finishSession()!;
   }
 
-  it('a mission lights its object once, however often it is played', async () => {
+  it('a mission is recorded once, however often it is played, and earns only session tokens', async () => {
     const m = await launch();
     onboard(m);
     expect(m.useApp.getState().startMission('gate-1').ok).toBe(true);
@@ -688,15 +693,15 @@ describe('the workshop loop', () => {
     expect(a.slots.every((x) => x.support === 'guided')).toBe(true);
     expect(a.countsAsRun).toBe(false);
     const recap = playActive(m);
-    expect(recap.rewards.items).toEqual(['bench-lamp']);
-    expect(recap.rewards.coins).toBe(5);
-    expect(m.useApp.getState().quests['gate-1'].completedAt).toBeDefined();
+    expect(recap.tokens).toBe(5);
+    const first = m.useApp.getState().quests['gate-1'].completedAt;
+    expect(first).toBeDefined();
 
     m.useApp.getState().startMission('gate-1');
-    const again = playActive(m);
-    expect(again.rewards.items).toEqual([]);
-    expect(m.useApp.getState().grants.filter((g) => g.itemId === 'bench-lamp')).toHaveLength(1);
+    playActive(m);
+    expect(m.useApp.getState().quests['gate-1'].completedAt).toBe(first);
     expect(m.useApp.getState().quests['gate-1'].runs).toBe(2);
+    expect(m.useApp.getState()).not.toHaveProperty('grants');
   });
 
   it('ending a mission early completes nothing', async () => {
@@ -706,7 +711,7 @@ describe('the workshop loop', () => {
     answer(m);
     m.useApp.getState().advance();
     const recap = m.useApp.getState().finishSession({ early: true })!;
-    expect(recap.rewards.items).toEqual([]);
+    expect(recap.tokens).toBe(0);
     expect(m.useApp.getState().quests['forge-9'].completedAt).toBeUndefined();
   });
 
@@ -724,9 +729,6 @@ describe('the workshop loop', () => {
     const recap = playActive(m, { correct: false });
     expect(recap.check?.correct).toBe(0);
     expect(recap.check?.next.kind).toBe('repair');
-    expect(recap.rewards.items).toContain('gate-token');
-    // Two different missions are now done, so the bookshelf milestone is earned too.
-    expect(recap.rewards.items).toContain('bookshelf');
     const rec = m.useApp.getState().checks.at(-1)!;
     expect(rec).toMatchObject({ kind: 'check', missionId: 'check-gate', correct: 0, total: 5 });
     // Missed independent answers stay as they were: nothing replaced them.
@@ -757,25 +759,13 @@ describe('the workshop loop', () => {
     }
   });
 
-  it('coins buy an object once; the project and feel settings are saved', async () => {
+  it('feel settings are saved', async () => {
     let m = await launch();
     onboard(m);
-    for (let i = 0; i < 3; i++) {
-      m.useApp.getState().startMission('gate-1');
-      playActive(m);
-    }
-    expect(m.useApp.getState().tokens).toBe(15);
-    expect(m.useApp.getState().buyItem('fern')).toBe(true);
-    expect(m.useApp.getState().buyItem('fern')).toBe(false);
-    expect(m.useApp.getState().tokens).toBe(0);
-    m.useApp.getState().chooseProject('rug');
-    m.useApp.getState().setFeel({ sound: false, focus: true });
+    m.useApp.getState().setFeel({ sound: false, reduceMotion: true });
     await m.flushSaves();
     m = await launch();
-    const s = m.useApp.getState();
-    expect(s.grants.map((g) => g.itemId)).toEqual(expect.arrayContaining(['bench-lamp', 'fern']));
-    expect(s.project?.itemId).toBe('rug');
-    expect(s.settings).toMatchObject({ sound: false, focus: true, haptics: true });
+    expect(m.useApp.getState().settings).toMatchObject({ sound: false, reduceMotion: true, haptics: true });
   });
 
   it('a weekly goal of four learning days pays once', async () => {
@@ -794,7 +784,6 @@ describe('the workshop loop', () => {
     }
     const s = m.useApp.getState();
     expect(s.tokenLedger.filter((e) => e.reason === 'weekly')).toHaveLength(1);
-    expect(s.grants.some((g) => g.itemId === 'weekly-ribbon')).toBe(true);
   });
 
   it('a session with answers is never silently replaced', async () => {
@@ -830,12 +819,11 @@ describe('the workshop loop', () => {
     await m.flushSaves();
     m = await launch();
     expect(m.useApp.getState().tokenLedger.filter((e) => e.id === 'weekly:2026-11-09')).toHaveLength(1);
-    expect(m.useApp.getState().grants.some((g) => g.itemId === 'weekly-ribbon')).toBe(true);
     m = await launch();
     expect(m.useApp.getState().tokenLedger.filter((e) => e.reason === 'weekly')).toHaveLength(1);
   });
 
-  it('missions and objects sync between devices without granting twice', async () => {
+  it('missions sync between devices by id: finished stays finished, earliest time wins', async () => {
     const m = await launch();
     onboard(m);
     h.server.session = 'user-a';
@@ -844,13 +832,151 @@ describe('the workshop loop', () => {
     playActive(m);
     await m.useApp.getState().syncNow();
     const snap = h.server.snapshots.get('user-a');
+    expect(snap.v).toBe(4);
     expect(snap.quests['gate-1'].completedAt).toBeDefined();
-    expect(snap.grants.map((g: { itemId: string }) => g.itemId)).toContain('bench-lamp');
-    // Another device also finished gate-1 earlier and earned the same lamp.
-    snap.quests['gate-1'].completedAt -= 1000;
-    snap.grants.push({ id: 'item:bench-lamp', itemId: 'bench-lamp', source: 'mission:gate-1', at: 1, catalogVersion: 1 });
+    expect(snap).not.toHaveProperty('grants');
+    // Another device finished gate-1 earlier.
+    const earlier = snap.quests['gate-1'].completedAt - 1000;
+    snap.quests['gate-1'].completedAt = earlier;
     h.server.versions.set('user-a', (h.server.versions.get('user-a') ?? 0) + 1);
     await m.useApp.getState().syncNow();
-    expect(m.useApp.getState().grants.filter((g) => g.itemId === 'bench-lamp')).toHaveLength(1);
+    expect(m.useApp.getState().quests['gate-1'].completedAt).toBe(earlier);
   });
+
+  it('a v3 server snapshot loses its workshop objects and object purchases on sync; nothing else is lost', async () => {
+    const m = await launch();
+    onboard(m);
+    h.server.session = 'user-a';
+    await m.useApp.getState().connectCloud('a@example.com', 'user-a', { importGuest: true });
+    const snap = h.server.snapshots.get('user-a');
+    // Another device on the v3 app had stored objects, a project and an object purchase.
+    h.server.snapshots.set('user-a', {
+      ...snap,
+      v: 3,
+      grants: [{ id: 'item:fern', itemId: 'fern', source: 'purchase', at: 1, catalogVersion: 1 }],
+      project: { itemId: 'rug', at: 1 },
+      tokenLedger: [...snap.tokenLedger, { id: 'other-session', delta: 5, reason: 'session', at: 2 }, { id: 'buy:fern', delta: -15, reason: 'purchase', at: 3 }],
+      quests: { 'gate-1': { version: 1, completedAt: 7, runs: 1 } },
+    });
+    h.server.versions.set('user-a', (h.server.versions.get('user-a') ?? 0) + 1);
+    await m.useApp.getState().syncNow();
+    const s = m.useApp.getState() as unknown as Record<string, unknown>;
+    expect(s.grants).toBeUndefined();
+    expect(s.project).toBeUndefined();
+    const ledger = m.useApp.getState().tokenLedger;
+    expect(ledger.some((e) => e.id === 'buy:fern')).toBe(false);
+    expect(ledger.some((e) => e.id === 'other-session')).toBe(true);
+    expect(m.useApp.getState().quests['gate-1'].completedAt).toBe(7);
+    const after = h.server.snapshots.get('user-a');
+    expect(after.v).toBe(4);
+    expect(after).not.toHaveProperty('grants');
+    expect(after.tokenLedger.some((e: { id: string }) => e.id === 'buy:fern')).toBe(false);
+  });
+
+  it("an unfinished check's answers stay out of every view outside the session until it ends", async () => {
+    const m = await launch();
+    onboard(m);
+    const before = JSON.stringify(m.useApp.getState().skills);
+    m.useApp.getState().startQuiz('check', { skills: ['div.digit-sum'] });
+    answer(m, { correct: false });
+    const live = m.useApp.getState();
+    const shown = visibleRecord(live);
+    expect(live.attempts.length).toBe(shown.attempts.length + 1);
+    expect(JSON.stringify(shown.skills)).toBe(before);
+    // Practice with immediate feedback is shown at once.
+    m.useApp.getState().abandonSession();
+    m.useApp.getState().startQuiz('practice', { skillId: 'div.digit-sum' });
+    answer(m, { correct: false });
+    expect(visibleRecord(m.useApp.getState()).attempts.length).toBe(m.useApp.getState().attempts.length);
+  });
+
+  it('a session with work is never silently replaced: an answer, a hint, or anything on the board', async () => {
+    const m = await launch();
+    onboard(m);
+    m.useApp.getState().startMission('gate-1');
+    const item = m.useApp.getState().currentItem()!;
+    // Only a placed tile, no answer yet.
+    m.useApp.getState().saveProgress({ itemId: item.id, draft: { kind: 'sort', bins: ['yes', ...Array(item.payload.kind === 'sort' ? item.payload.numbers.length - 1 : 0).fill(null)] }, hints: 0, ruleRevealed: false, firstSeenAt: Date.now(), activeMs: 0 });
+    expect(m.useApp.getState().startQuiz('check')).toEqual({ ok: false, reason: 'in-progress' });
+    // Only a hint.
+    m.useApp.getState().saveProgress({ itemId: item.id, draft: null, hints: 1, ruleRevealed: false, firstSeenAt: Date.now(), activeMs: 0 });
+    expect(m.useApp.getState().startGame('div.digit-sum', 'forge')).toEqual({ ok: false, reason: 'in-progress' });
+    expect(m.useApp.getState().active!.missionId).toBe('gate-1');
+    expect(m.useApp.getState().active!.progress?.hints).toBe(1);
+  });
+
+  it('replacing a session that was only opened never charges a second free run', async () => {
+    const m = await launch();
+    onboard(m);
+    expect(m.useApp.getState().startSession('journey').ok).toBe(true);
+    expect(m.useApp.getState().runs.used).toBe(1);
+    expect(m.useApp.getState().startGame('div.digit-sum', 'gates').ok).toBe(true);
+    expect(m.useApp.getState().runs.used).toBe(1);
+    m.useApp.getState().abandonSession();
+    expect(m.useApp.getState().runs.used).toBe(0);
+  });
+
+  it('a game plays only its own board style for the chosen skill, and leads back to the topic', async () => {
+    const m = await launch();
+    onboard(m);
+    expect(m.useApp.getState().startGame('div.digit-sum', 'forge').ok).toBe(true);
+    const a = m.useApp.getState().active!;
+    expect(a.mode).toBe('game');
+    expect(a.returnTo).toBe('div.digit-sum');
+    expect(a.slots.length).toBe(5);
+    for (const x of a.slots) {
+      expect(x.skillId).toBe('div.digit-sum');
+      expect(TEMPLATE_BY_ID[x.templateId].board).toBe('construct');
+    }
+    // A brand-new skill plays guided.
+    expect(a.slots[0].support).toBe('guided');
+    const recap = playActive(m);
+    expect(recap.returnTo).toBe('div.digit-sum');
+    // A skill with no puzzles in that style can't start it.
+    expect(m.useApp.getState().startGame('rem.cycles', 'gates')).toEqual({ ok: false, reason: 'empty' });
+  });
+
+  it('guided practice keeps the rule on screen and can narrow to one family', async () => {
+    const m = await launch();
+    onboard(m);
+    expect(m.useApp.getState().startQuiz('practice', { skillId: 'div.digit-sum', templateId: 'div.digit-sum/sort' }).ok).toBe(true);
+    const a = m.useApp.getState().active!;
+    expect(a.feedback).toBe('immediate');
+    expect(a.slots.every((x) => x.support === 'guided' && x.templateId === 'div.digit-sum/sort')).toBe(true);
+    expect(a.slots).toHaveLength(3);
+    expect(a.countsAsRun).toBe(false);
+    expect(a.returnTo).toBe('div.digit-sum');
+    m.useApp.getState().abandonSession();
+    // A whole topic's practice set is longer and uses a free session.
+    expect(m.useApp.getState().startQuiz('practice', { skillId: 'div.digit-sum' }).ok).toBe(true);
+    expect(m.useApp.getState().active!.slots).toHaveLength(6);
+    expect(m.useApp.getState().active!.countsAsRun).toBe(true);
+  });
+
+  it('a related problem after a wrong answer is a new guided puzzle; the wrong answer stays as recorded', async () => {
+    const m = await launch();
+    onboard(m);
+    m.useApp.getState().startGame('div.digit-sum', 'forge');
+    // Not before an answer.
+    expect(m.useApp.getState().addRelatedSlot()).toBe(false);
+    answer(m, { correct: false });
+    const before = m.useApp.getState().attempts.at(-1)!;
+    expect(m.useApp.getState().addRelatedSlot()).toBe(true);
+    expect(m.useApp.getState().addRelatedSlot()).toBe(false);
+    const a = m.useApp.getState().active!;
+    const related = a.slots[a.index + 1];
+    expect(related).toMatchObject({ reason: 'related', support: 'guided', templateId: a.slots[a.index].templateId });
+    expect(related.seed).not.toBe(a.slots[a.index].seed);
+    m.useApp.getState().advance();
+    answer(m);
+    const attempts = m.useApp.getState().attempts;
+    expect(attempts.find((x) => x.id === before.id)).toEqual(before);
+    expect(attempts.at(-1)!.support).toBe('guided');
+    // Never in a check, where verdicts wait for the end.
+    playActive(m);
+    m.useApp.getState().startQuiz('check', { skills: ['div.digit-sum'] });
+    answer(m, { correct: false });
+    expect(m.useApp.getState().addRelatedSlot()).toBe(false);
+  });
+
 });

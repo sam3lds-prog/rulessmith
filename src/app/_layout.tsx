@@ -1,9 +1,8 @@
 import { AtkinsonHyperlegible_400Regular } from '@expo-google-fonts/atkinson-hyperlegible/400Regular';
 import { AtkinsonHyperlegible_700Bold } from '@expo-google-fonts/atkinson-hyperlegible/700Bold';
-import { Fredoka_600SemiBold } from '@expo-google-fonts/fredoka/600SemiBold';
-import { Fredoka_700Bold } from '@expo-google-fonts/fredoka/700Bold';
-import { NunitoSans_400Regular } from '@expo-google-fonts/nunito-sans/400Regular';
-import { NunitoSans_700Bold } from '@expo-google-fonts/nunito-sans/700Bold';
+import { Inter_400Regular } from '@expo-google-fonts/inter/400Regular';
+import { Inter_600SemiBold } from '@expo-google-fonts/inter/600SemiBold';
+import { Inter_700Bold } from '@expo-google-fonts/inter/700Bold';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -16,10 +15,9 @@ import { color } from '../ui/theme';
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    Fredoka_600SemiBold,
-    Fredoka_700Bold,
-    NunitoSans_400Regular,
-    NunitoSans_700Bold,
+    Inter_400Regular,
+    Inter_600SemiBold,
+    Inter_700Bold,
     AtkinsonHyperlegible_400Regular,
     AtkinsonHyperlegible_700Bold,
   });

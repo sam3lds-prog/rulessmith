@@ -8,13 +8,14 @@ import { policyFor } from '../policy/age';
 import { useApp } from '../state/store';
 import { BackLink, Body, Button, Gap, Heading, Plate, Screen, Small, Title } from '../ui/kit';
 import { color, font, radius, space, type } from '../ui/theme';
+import { useNow } from '../ui/useNow';
 
 export default function Premium() {
+  const now = useNow();
   const s = useApp();
   const [selected, setSelected] = useState('premium_annual');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
-  const now = Date.now();
   const policy = policyFor(s.profile?.ageBand);
   const premium = isPremium(s.entitlements, now);
 
@@ -44,7 +45,7 @@ export default function Premium() {
 
   if (done) {
     return (
-      <Screen footer={<Button title="Start practising" onPress={() => router.replace('/play')} />}>
+      <Screen footer={<Button title="Start practising" onPress={() => router.replace('/today')} />}>
         <Gap h={space.xxl} />
         <Title>{done} is active.</Title>
         <Gap />
@@ -101,8 +102,8 @@ export default function Premium() {
       <BackLink />
       <Title>Practise without limits</Title>
       <Gap h={space.sm} />
-      <Body>Premium gives you unlimited runs, every level from 1 to 10, every pack (including future ones while you subscribe), Challenge mode, and no ads.</Body>
-      <Small style={{ marginTop: space.sm }}>Free stays useful: the daily puzzle, 3 runs a day, levels 1 to 3, and every hint and explanation.</Small>
+      <Body>Premium gives you unlimited sessions, every level from 1 to 10, every pack (including future ones while you subscribe), Challenge mode, and no ads.</Body>
+      <Small style={{ marginTop: space.sm }}>Free stays useful: the daily puzzle, 3 sessions a day, levels 1 to 3, paths, concept checks, reviews, and every hint and explanation.</Small>
 
       <Gap h={space.xl} />
       <Heading>Premium</Heading>
