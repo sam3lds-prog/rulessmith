@@ -2,7 +2,7 @@
 
 *Learn the rule. Make the move.*
 
-A puzzle app where each math rule becomes a move you make. It starts with number properties for adult GMAT and GRE learners: divisibility, primes and factors, and remainders. Every rule you figure out adds something to your *workshop of ideas*. One codebase runs on iOS, Android and the web.
+A puzzle app where each math rule becomes a move you make. It starts with number properties for adult GMAT and GRE learners: divisibility, primes and factors, and remainders. Learn a rule from a short worked example, use it in games that get harder, and check what you can do with the rule hidden. One codebase runs on iOS, Android and the web.
 
 **Name.** Rulesmith is the working name from the build plan. *Math Whizz* is a registered US trademark of Whizz Education, so the app does not launch under it. The name lives in one constant (`APP_NAME` in `src/config.ts`) plus `app.json`, so it is a two-line change once the trademark search is done.
 
@@ -13,9 +13,10 @@ This is the foundation from Phases 1 to 3 of the plan, with the Phase 4 money an
 | Plan area | Status |
 | --- | --- |
 | Puzzle boards: Sort, Construct, Refute, Factor and Rail, plus choice and numeric | Built, tap-only (no dragging) |
-| Five games over those boards: Number Gates, Number Forge, Rule Breaker, Factor Factory, Remainder Rails | Built (`src/games`) |
-| Chapters and missions: "Light the Gatehouse" (6 missions), Factor Foundry and Clockwork Harbor (2 each) | Built and tested (`src/quests`) |
-| Workshop of ideas: scene, companion, 18 objects earned by missions, milestones or Workshop Coins; current project; weekly goal | Built and tested (`src/world`, `src/rewards`) |
+| Five games over those boards, chosen per topic: Pattern Sort, Missing Digit, Rule Detective, Factor Split, Remainder Loop | Built and tested (`src/games`) |
+| Coaching after a wrong answer: your answer, the rule, why this answer fails, a different worked example, a related problem | Built and tested (`src/coach`) |
+| Review my mistakes from every mode, by topic, with honest fallbacks for changed or withdrawn puzzles | Built and tested (`src/review`) |
+| Paths: divisibility (6 steps), prime factors and remainders (2 each) | Built and tested (`src/quests`) |
 | Concept checks with results at the end, repair missions, mixed exam drill, recall | Built and tested (`src/quizzes`) |
 | Exam map with honest coverage and the official outline for GMAT, GRE, SAT and ACT | Built (`src/exams`); domain mapping needs review |
 | Sound, vibration, reduce motion and Focus settings | Built (`src/feel`) |
@@ -27,9 +28,9 @@ This is the foundation from Phases 1 to 3 of the plan, with the Phase 4 money an
 | Session mixer (60% target, 30% review, 10% stretch) | Built |
 | Try-a-puzzle, profile questions, placement check (8 to 15 items) | Built |
 | Journey planner: weekly plan, milestones, checkpoints, weekly re-plan, "doesn't fit" alternatives | Built |
-| Play, Plan, Practice and Workshop tabs; settings from the header; topic cards; endless ladder; challenge builder; daily puzzle with spoiler-free share | Built |
+| Today, My plan, Practice and Progress tabs; settings from the header; topic pages; endless ladder; challenge builder; daily puzzle with spoiler-free share | Built |
 | Session recap with the session-break ad slot | Built (placeholder ad, switched off by default) |
-| Premium, Exam Sprint, packs, free limits, earned Workshop Coins | Rules built and tested; purchases use a **test provider** (no money moves) |
+| Premium, Exam Sprint, packs, free limits, earned tokens | Rules built and tested; purchases use a **test provider** (no money moves) |
 | Ad rules (adults only, never mid-puzzle, after a miss, or in the first 3 sessions) | Built and tested; AdMob not yet wired |
 | Age bands: adults full, teens no ads or purchases, under-13s wait for parent accounts | Built and tested; store age signals not yet wired |
 | Accounts: one storage bucket per learner (sign-out never leaves the last learner on screen), guest import only by choice, attempt outbox, merge by id across devices | Built and tested; needs a Supabase project to run |
@@ -92,15 +93,16 @@ Copy `.env.example` to `.env`. Everything is optional: with no values the app ru
 
 ```
 src/
-  app/            screens (Expo Router): welcome, onboarding/*, (tabs)/play|plan|practice|workshop, mission/[id], session, recap, ...
+  app/            screens (Expo Router): welcome, onboarding/*, (tabs)/today|plan|practice|progress, skill/[id], mistakes, mission/[id], session, recap, ...
   content/        the content engine: templates, generators, the independent checker, the audit
   engine/         the learning engine: rating, mastery, review, mixer, placement, planner, daily
-  monetization/   products, entitlements, Workshop Coins (tokens.ts), purchase provider
-  games/          the five game skins and which board each wraps
-  quests/         chapters and missions
+  monetization/   products, entitlements, tokens, purchase provider
+  coach/          explanations of a learner's own answer (never grading)
+  review/         reviewing past mistakes from the attempt log
+  games/          the five games, which board each wraps, and rounds per topic
+  quests/         paths (chapters) and their steps (missions)
   quizzes/        concept checks, drills, recall and repair
-  rewards/        workshop grants, coin purchases, the weekly goal
-  world/          workshop districts and objects
+  rewards/        tokens and the weekly goal
   exams/          exam blueprints and honest coverage
   feel/           feedback events (pure) and the sound and haptics director
   policy/         age bands and ad placement rules
@@ -109,7 +111,7 @@ src/
   data/           Supabase client, remote kill switch
   boards/         the puzzle boards and the item screen
   ads/            ad slots (placeholders until AdMob)
-  ui/             design tokens, components, the workshop scene and companion
+  ui/             design tokens and components
 supabase/migrations/   database schema with row-level security
 supabase/checks/       access-rule checks for the schema, runnable on plain Postgres
 docs/                  architecture, content factory, monetization, roadmap
