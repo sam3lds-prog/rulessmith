@@ -64,7 +64,7 @@ export default function Topic() {
     <Screen
       footer={
         <>
-          <Button title="Practise with the rule on screen" onPress={() => go(() => s.startQuiz('practice', { skillId: skill.id }))} />
+          <Button title="Start guided practice" onPress={() => go(() => s.startQuiz('practice', { skillId: skill.id }))} />
           <Button title="Take a concept check" kind="secondary" onPress={() => go(() => s.startQuiz('check', { skills: [skill.id], returnTo: skill.id }))} />
         </>
       }
