@@ -90,10 +90,12 @@ export function ItemScreen({
   const [reported, setReported] = useState(false);
   const [relatedAdded, setRelatedAdded] = useState(false);
   const [elapsed, setElapsed] = useState(restored?.activeMs ?? 0);
-  const firstSeenAt = useRef(restored?.firstSeenAt ?? Date.now());
+  // Read the clock once, in state initialisers, so render stays pure.
+  const [firstSeenAt] = useState(() => restored?.firstSeenAt ?? Date.now());
+  const [openedAt] = useState<number | null>(() => (AppState.currentState === 'background' ? null : Date.now()));
   // Active time: what was banked before, plus the current foreground stretch.
   const banked = useRef(restored?.activeMs ?? 0);
-  const since = useRef<number | null>(AppState.currentState === 'background' ? null : Date.now());
+  const since = useRef<number | null>(openedAt);
   const scroll = useRef<ScrollViewInstance>(null);
   const p = item.payload;
   const locked = result !== null;
@@ -104,11 +106,14 @@ export function ItemScreen({
   const activeMs = () => banked.current + (since.current !== null ? Date.now() - since.current : 0);
 
   const latest = useRef({ draft, hints, ruleRevealed, locked });
-  latest.current = { draft, hints, ruleRevealed, locked };
+  // Kept current after each render (not during it); the saves below read it.
+  useEffect(() => {
+    latest.current = { draft, hints, ruleRevealed, locked };
+  });
   const report = () => {
     const l = latest.current;
     if (l.locked || !onProgress) return;
-    onProgress({ itemId: item.id, draft: l.draft, hints: l.hints, ruleRevealed: l.ruleRevealed, firstSeenAt: firstSeenAt.current, activeMs: activeMs() });
+    onProgress({ itemId: item.id, draft: l.draft, hints: l.hints, ruleRevealed: l.ruleRevealed, firstSeenAt: firstSeenAt, activeMs: activeMs() });
   };
 
   // Save on every change to the work, including the first view (so first-seen time survives).
@@ -163,7 +168,7 @@ export function ItemScreen({
       ruleShown: lensOpen,
       support,
       ms,
-      firstSeenAt: firstSeenAt.current,
+      firstSeenAt: firstSeenAt,
       response,
       misconception: r.misconception,
       result: r,

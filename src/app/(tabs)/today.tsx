@@ -16,6 +16,7 @@ import { AppHeader } from '../../ui/AppHeader';
 import { Button, Eyebrow, Gap, Label, LinkRow, Micro, Plate, Screen, Small, statusLabel, Title } from '../../ui/kit';
 import { color, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
+import { useNow } from '../../ui/useNow';
 
 /**
  * Today: the open session first, then one recommended topic with a reason and
@@ -23,13 +24,13 @@ import { useStart } from '../../ui/useStart';
  * compactly. A missed day never takes anything away.
  */
 export default function Today() {
+  const now = useNow();
   const s = useApp();
   const [blocked, setBlocked] = useState<null | 'no-runs' | 'empty'>(null);
   const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
   if (!s.plan) return <Redirect href="/onboarding/placement" />;
 
-  const now = Date.now();
   const exams = s.profile.exams;
   const examName = exams.length ? exams.map((e) => EXAMS.find((x) => x.id === e)?.name).join(' and ') : 'your goals';
   const targets = todaysTargets(s.plan, s.skills, now);

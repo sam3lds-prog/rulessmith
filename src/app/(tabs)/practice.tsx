@@ -18,6 +18,7 @@ import { AppHeader } from '../../ui/AppHeader';
 import { Button, Chip, Eyebrow, Gap, Heading, Label, LinkRow, Micro, Plate, Screen, Small, Stamp, Title } from '../../ui/kit';
 import { color, radius, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
+import { useNow } from '../../ui/useNow';
 
 const RELEASED = TRACKS.filter((t) => t.available);
 
@@ -26,8 +27,8 @@ const RELEASED = TRACKS.filter((t) => t.available);
  * screen, take a concept check with the rule hidden, or review your mistakes.
  */
 export default function Practice() {
+  const now = useNow();
   const s = useApp();
-  const now = Date.now();
   const targets = s.plan ? todaysTargets(s.plan, s.skills, now) : [];
   const [track, setTrack] = useState<TrackId>(() => (targets[0] ? SKILL_BY_ID[targets[0]].track : RELEASED[0].id));
   const [skillId, setSkillId] = useState<string>(() => targets[0] ?? SKILLS.find((k) => k.track === RELEASED[0].id)!.id);

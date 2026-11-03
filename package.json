@@ -29,6 +29,8 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
+    "eslint": "^9.0.0",
+    "eslint-config-expo": "~58.0.4",
     "typescript": "~6.0.3",
     "vitest": "^5.0.5"
   },
@@ -44,7 +46,8 @@
     "content:audit": "vitest run src/content",
     "content:sample": "CONTENT_SAMPLE=1 vitest run src/dev/sample-items.test.ts --silent=false",
     "content:worksheet": "CONTENT_SAMPLE=1 vitest run src/dev/review-sheet.test.ts",
-    "content:signoff": "SIGNOFF_REPORT=1 vitest run src/content/signoff.test.ts --silent=false"
+    "content:signoff": "SIGNOFF_REPORT=1 vitest run src/content/signoff.test.ts --silent=false",
+    "lint": "expo lint"
   },
   "private": true
 }

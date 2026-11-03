@@ -9,6 +9,7 @@ import { useApp } from '../../state/store';
 import { BackLink, Body, Button, Eyebrow, Gap, Label, Plate, Screen, Small, Title } from '../../ui/kit';
 import { color, space } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
+import { useNow } from '../../ui/useNow';
 
 /** One static page per mission in the web export, so a shared link opens the right card. */
 export function generateStaticParams(): { id: string }[] {
@@ -21,10 +22,11 @@ export default function MissionCard() {
   const s = useApp();
   const [error, setError] = useState<string | null>(null);
   const { start: startWith, sheet } = useStart();
+  const now = useNow();
   const m = MISSION_BY_ID[id ?? ''];
   if (!m) return <Redirect href="/today" />;
   const chapter = CHAPTER_BY_ID[m.chapterId];
-  const st = missionState(m, s.quests, Date.now());
+  const st = missionState(m, s.quests, now);
   const step = chapter.missions.findIndex((x) => x.id === m.id) + 1;
   const game = m.game ? GAMES[m.game] : undefined;
   const what =

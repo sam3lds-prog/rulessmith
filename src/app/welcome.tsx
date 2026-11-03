@@ -18,16 +18,17 @@ export default function Welcome() {
   const [last, setLast] = useState<{ correct: boolean; ms: number } | null>(null);
   const setTried = useApp((s) => s.setTriedPuzzle);
   const flagsVersion = useApp((s) => s.flagsVersion);
+  // A fresh puzzle each visit, chosen once (render stays pure).
+  const [seed] = useState(() => Math.floor(Math.random() * 2 ** 30) + 1);
   // The digit-sum sort, unless it is switched off; then the nearest servable easy puzzle.
   const item = useMemo(() => {
-    const seed = Math.floor(Math.random() * 2 ** 30) + 1;
     const ids = ['div.digit-sum/sort', ...templatesForSkill('div.digit-sum', 2).map((t) => t.id), ...TEMPLATES.filter((t) => (t.minLevel ?? 1) <= 2).map((t) => t.id)];
     for (const templateId of ids) {
       const it = serveItem({ templateId, level: 2, seed, version: templateVersionOf(templateId) });
       if (it) return it;
     }
     return null;
-  }, [flagsVersion]);
+  }, [flagsVersion, seed]);
 
   if (stage === 'puzzle' && item) {
     return (

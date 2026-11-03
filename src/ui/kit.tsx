@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
   optionOn: { borderColor: color.action, backgroundColor: color.actionWash },
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: color.ruleStrong },
   radioOn: { borderColor: color.action, borderWidth: 6 },
-  stamp: { borderWidth: 1.5, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start' },
+  stamp: { borderWidth: 1.5, borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'center' },
   stampText: { fontFamily: font.label, fontSize: 12.5, letterSpacing: 0.1 },
   linkRow: {
     flexDirection: 'row',

@@ -31,7 +31,7 @@ function seq(parts, gapMs = 0) {
   parts.forEach((p, i) => p.forEach((v, j) => (out[i * gap + j] += v)));
   return out;
 }
-const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, A4 = 440, F4 = 349.23;
+const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, A4 = 440, F4 = 349.23;
 const sounds = {
   tick: tone(1760, 45, { amp: 0.18, decay: 9 }),
   pop: tone(620, 110, { amp: 0.28, decay: 7, glideTo: 880 }),

@@ -15,6 +15,7 @@ import { Eyebrow, Gap, Heading, Label, LinkRow, Meter, Micro, Plate, Screen, Sma
 import { PlanView } from '../../ui/PlanView';
 import { color, font, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
+import { useNow } from '../../ui/useNow';
 
 const DOMAIN_STATUS: Record<ExamDomain['status'], { label: string; fg: string; bg: string }> = {
   foundations: { label: 'Foundations here', fg: color.actionDeep, bg: color.actionWash },
@@ -24,12 +25,12 @@ const DOMAIN_STATUS: Record<ExamDomain['status'], { label: string; fg: string; b
 
 /** My plan: the exam, the pace, this week (every skill opens its topic), honest coverage and what is planned. */
 export default function Plan() {
+  const now = useNow();
   const s = useApp();
   const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
   if (!s.plan) return <Redirect href="/onboarding/placement" />;
 
-  const now = Date.now();
   const p = s.profile;
   const exams = p.exams;
   const examName = exams.length ? exams.map((e) => EXAMS.find((x) => x.id === e)?.name).join(' and ') : 'General math';

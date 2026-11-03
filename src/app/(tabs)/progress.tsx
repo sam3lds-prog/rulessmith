@@ -11,6 +11,7 @@ import { AppHeader } from '../../ui/AppHeader';
 import { Eyebrow, Gap, Heading, Label, LinkRow, Meter, Micro, Plate, Screen, Small, Stamp, Title } from '../../ui/kit';
 import { color, font, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
+import { useNow } from '../../ui/useNow';
 
 const KIND_NAME = { check: 'Concept check', drill: 'Mixed drill', recall: 'Review', repair: 'Repair', practice: 'Guided practice' } as const;
 
@@ -22,11 +23,11 @@ function evidence(attempts: Attempt[]) {
 
 /** Progress: what each topic shows so far, split into practice with help and answers on your own, plus reviews, checks and mistakes. */
 export default function Progress() {
+  const now = useNow();
   const s = useApp();
   const { start, sheet } = useStart();
   if (!s.profile) return <Redirect href="/welcome" />;
 
-  const now = Date.now();
   const statuses = SKILLS.map((k) => displayStatus(s.skills[k.id], now));
   const secure = statuses.filter((x) => x === 'secure' || x === 'review').length;
   const practising = statuses.filter((x) => x === 'practicing').length;

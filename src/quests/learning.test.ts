@@ -6,7 +6,7 @@ import { FEEL, NEUTRAL_EVENTS } from '../feel/events';
 import { GAMES } from '../games/registry';
 import { newSkillState } from '../engine/mastery';
 import { DAY_MS } from '../engine/time';
-import { CHAPTERS, MISSION_BY_ID, MISSIONS, missionSlots, missionState, nextMission, type Quests } from '../quests/chapters';
+import { MISSION_BY_ID, MISSIONS, missionSlots, missionState, nextMission, type Quests } from '../quests/chapters';
 import { drillSlots, heldOutSlots, repairSlots, summarizeCheck } from '../quizzes/policies';
 import { tokenBalance, weekKey, weeklyProgress, weeklyRewardEntry, weeksMet } from '../rewards/ledger';
 import { migrateData, migrateSnapshot } from '../state/migrate';

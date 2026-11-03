@@ -19,7 +19,7 @@ import { meetsSecure } from '../engine/mastery';
 import { parseDay } from '../engine/time';
 import type { Attempt, EvidenceEntry, SkillState, Slot, Support } from '../engine/types';
 import { RENAMED_PRODUCTS } from '../monetization/products';
-import { derived, SNAPSHOT_VERSION, type Synced } from '../sync/merge';
+import { derived, type Synced } from '../sync/merge';
 import { INITIAL, type ContentReport, type Data, type DailyResult, type SessionLogEntry, type TokenEntry } from './types';
 
 export const STATE_VERSION = 4;

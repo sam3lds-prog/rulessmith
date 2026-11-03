@@ -100,7 +100,12 @@ export function checkItem(item: Item, response: Response): CheckResult {
 export function primeFactorsBrute(n: number): number[] {
   const out: number[] = [];
   let m = n;
-  for (let q = 2; q * q <= m; q++) while (m % q === 0) (out.push(q), (m /= q));
+  for (let q = 2; q * q <= m; q++) {
+    while (m % q === 0) {
+      out.push(q);
+      m /= q;
+    }
+  }
   if (m > 1) out.push(m);
   return out;
 }

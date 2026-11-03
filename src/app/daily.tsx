@@ -9,10 +9,11 @@ import { dayKey } from '../engine/time';
 import { dailySlot, useApp } from '../state/store';
 import { BackLink, Body, Button, Gap, Plate, Screen, Small, Title } from '../ui/kit';
 import { color, font, space } from '../ui/theme';
+import { useNow } from '../ui/useNow';
 
 /** The free daily puzzle. Works without an account, on the web too (it is the shareable growth loop). */
 export default function Daily() {
-  const day = dayKey(Date.now());
+  const day = dayKey(useNow());
   const done = useApp((s) => s.daily[day]);
   const profile = useApp((s) => s.profile);
   const flagsVersion = useApp((s) => s.flagsVersion);

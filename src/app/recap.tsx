@@ -15,6 +15,7 @@ import { adsLive, useApp, type StartResult } from '../state/store';
 import { Body, Button, Eyebrow, Gap, Heading, Label, Micro, Plate, Screen, Small, Stamp, Title } from '../ui/kit';
 import { color, font, space, type } from '../ui/theme';
 import { useStart } from '../ui/useStart';
+import { useNow } from '../ui/useNow';
 
 const KIND_TITLE: Record<string, string> = { check: 'Concept check', drill: 'Mixed drill', recall: 'Review', repair: 'Repair', practice: 'Guided practice' };
 
@@ -23,6 +24,7 @@ const KIND_TITLE: Record<string, string> = { check: 'Concept check', drill: 'Mix
  * every answer with its explanation, and one next step. No reward screens.
  */
 export default function RecapScreen() {
+  const now = useNow();
   const s = useApp();
   const r = s.lastRecap;
   const [reviewOpen, setReviewOpen] = useState(Boolean(r?.check));
@@ -44,7 +46,6 @@ export default function RecapScreen() {
   );
   if (!r) return <Redirect href="/today" />;
 
-  const now = Date.now();
   const mission = r.missionId ? MISSION_BY_ID[r.missionId] : undefined;
   const missionDone = mission && s.quests[mission.id]?.completedAt;
   const topic = r.returnTo ? SKILL_BY_ID[r.returnTo] : undefined;

@@ -8,13 +8,14 @@ import { policyFor } from '../policy/age';
 import { useApp } from '../state/store';
 import { BackLink, Body, Button, Gap, Heading, Plate, Screen, Small, Title } from '../ui/kit';
 import { color, font, radius, space, type } from '../ui/theme';
+import { useNow } from '../ui/useNow';
 
 export default function Premium() {
+  const now = useNow();
   const s = useApp();
   const [selected, setSelected] = useState('premium_annual');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
-  const now = Date.now();
   const policy = policyFor(s.profile?.ageBand);
   const premium = isPremium(s.entitlements, now);
 

@@ -13,6 +13,7 @@ import { useApp, type StartResult } from '../../state/store';
 import { BackLink, Body, Button, Eyebrow, Gap, Heading, Label, LinkRow, Plate, Screen, Small, Stamp, Title } from '../../ui/kit';
 import { color, font, radius, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
+import { useNow } from '../../ui/useNow';
 
 /** One static page per skill in the web export. */
 export function generateStaticParams(): { id: string }[] {
@@ -25,6 +26,7 @@ export function generateStaticParams(): { id: string }[] {
  * and the evidence so far. Prerequisites are recommendations; nothing is locked.
  */
 export default function Topic() {
+  const now = useNow();
   const { id } = useLocalSearchParams<{ id: string }>();
   const s = useApp();
   const [blocked, setBlocked] = useState(false);
@@ -41,7 +43,6 @@ export default function Topic() {
   }, [skill?.id, s.flagsVersion]);
   if (!skill) return <Redirect href="/practice" />;
 
-  const now = Date.now();
   const st = stateOf(s.skills, skill.id);
   const status = displayStatus(st, now);
   const gaps = secureGaps(st);

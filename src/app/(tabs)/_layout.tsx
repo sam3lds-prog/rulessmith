@@ -5,9 +5,11 @@ import { color, font } from '../../ui/theme';
 
 type IconName = React.ComponentProps<typeof Feather>['name'];
 
-const icon =
-  (name: IconName) =>
-  ({ color: c }: { color: unknown }) => <Feather name={name} size={22} color={c as string} />;
+const icon = (name: IconName) => {
+  const TabIcon = ({ color: c }: { color: unknown }) => <Feather name={name} size={22} color={c as string} />;
+  TabIcon.displayName = `TabIcon(${name})`;
+  return TabIcon;
+};
 
 /** Four destinations: Today (the next useful step), My plan, Practice (topics, games, checks, mistakes) and Progress. */
 export default function TabsLayout() {

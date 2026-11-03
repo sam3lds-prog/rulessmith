@@ -15,6 +15,7 @@ import { TOKEN_COSTS, TOKEN_REWARDS } from '../monetization/tokens';
 import { WEEKLY_REWARD } from '../rewards/ledger';
 import { BackLink, Body, Button, Gap, Heading, LinkRow, Plate, Row, Screen, Small, Title } from '../ui/kit';
 import { color, space } from '../ui/theme';
+import { useNow } from '../ui/useNow';
 
 const FEEL_ROWS: { key: keyof FeelSettings; title: string; detail: string }[] = [
   { key: 'sound', title: 'Sounds', detail: 'Soft taps and chimes. Off when your phone is on silent.' },
@@ -23,12 +24,12 @@ const FEEL_ROWS: { key: keyof FeelSettings; title: string; detail: string }[] = 
 ];
 
 export default function You() {
+  const now = useNow();
   const s = useApp();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const now = Date.now();
   const p = s.profile;
   const premium = isPremium(s.entitlements, now);
   const policy = policyFor(p?.ageBand);

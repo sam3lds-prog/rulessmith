@@ -6,9 +6,8 @@
  */
 import type { ExamId } from '../content/curriculum';
 import { depthOf, SKILLS } from '../content/curriculum';
-import { updateRating } from './rating';
 import type { Profile } from './types';
-import { ratingFromSelf, BASE_RATING, levelForSuccess } from './rating';
+import { BASE_RATING, levelForSuccess, ratingFromSelf, updateRating } from './rating';
 
 export const PLACEMENT_MIN = 8;
 export const PLACEMENT_MAX = 15;

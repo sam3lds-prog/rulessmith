@@ -158,7 +158,7 @@ export interface ComposeArgs extends PickOptions {
 }
 
 export function composeSession(args: ComposeArgs): Slot[] {
-  const { states, now, rng } = args;
+  const { states, now } = args;
   const length = args.length ?? 8;
   const nReview = Math.round(length * 0.3);
   const nStretch = Math.max(1, Math.round(length * 0.1));
