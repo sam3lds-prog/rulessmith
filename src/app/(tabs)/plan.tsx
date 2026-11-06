@@ -17,6 +17,7 @@ import { color, font, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
 import { useNow } from '../../ui/useNow';
 import { useRecord } from '../../ui/useRecord';
+import { ExamMarks } from '../../ui/ExamMarks';
 
 const DOMAIN_STATUS: Record<ExamDomain['status'], { label: string; fg: string; bg: string }> = {
   foundations: { label: 'Foundations here', fg: color.actionDeep, bg: color.actionWash },
@@ -158,6 +159,7 @@ export default function Plan() {
             <Micro style={{ marginTop: space.sm }}>Which skills sit under which part of the outline, and how much each matters, is our own estimate, not an official weighting.</Micro>
           </>
         ) : null}
+        <ExamMarks style={{ marginTop: space.lg }} />
         {sheet}
       </Screen>
       {banner ? <BannerSlot /> : null}

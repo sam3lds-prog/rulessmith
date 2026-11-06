@@ -15,6 +15,7 @@ import { TOKEN_COSTS, TOKEN_REWARDS } from '../monetization/tokens';
 import { WEEKLY_REWARD } from '../rewards/ledger';
 import { BackLink, Body, Button, Gap, Heading, LinkRow, OptionRow, Plate, Row, Screen, Small, Title } from '../ui/kit';
 import { color, space } from '../ui/theme';
+import { ExamMarks } from '../ui/ExamMarks';
 import { useNow } from '../ui/useNow';
 
 const FEEL_ROWS: { key: keyof FeelSettings; title: string; detail: string }[] = [
@@ -188,6 +189,7 @@ export default function You() {
 
       <Gap h={space.xl} />
       <Small>Content {CONTENT_VERSION}</Small>
+      <ExamMarks style={{ marginTop: space.sm }} />
     </Screen>
   );
 }

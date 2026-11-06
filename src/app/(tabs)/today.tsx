@@ -13,6 +13,7 @@ import { canOfferRewarded } from '../../policy/ads';
 import { weeklyProgress } from '../../rewards/ledger';
 import { adsLive, useApp } from '../../state/store';
 import { AppHeader } from '../../ui/AppHeader';
+import { ExamMarks } from '../../ui/ExamMarks';
 import { TrackGlyph } from '../../ui/motion';
 import { Button, Eyebrow, Gap, Label, LinkRow, Micro, Plate, Screen, Small, statusLabel, Title } from '../../ui/kit';
 import { color, space, type } from '../../ui/theme';
@@ -150,6 +151,7 @@ export default function Today() {
           ))}
         </View>
       </View>
+      {exams.length ? <ExamMarks style={{ marginTop: space.lg }} /> : null}
       {sheet}
     </Screen>
   );
