@@ -13,6 +13,7 @@ import { MISSION_BY_ID, nextMission } from '../quests/chapters';
 import { reviewEntry, STATUS_NOTE } from '../review/mistakes';
 import { adsLive, useApp, type StartResult } from '../state/store';
 import { Body, Button, Eyebrow, Gap, Heading, Label, Micro, Plate, Screen, Small, Stamp, Title } from '../ui/kit';
+import { AccuracyRing } from '../ui/motion';
 import { color, font, space, type } from '../ui/theme';
 import { useStart } from '../ui/useStart';
 import { useNow } from '../ui/useNow';
@@ -113,7 +114,17 @@ export default function RecapScreen() {
         </>
       )}
 
-      <Gap h={space.lg} />
+      {(r.check ? r.check.total : r.total) > 0 ? (
+        <Plate style={{ marginTop: space.lg }}>
+          {r.check ? (
+            <AccuracyRing own={r.check.unaided ?? r.check.correct} helped={r.check.helped ?? 0} total={r.check.total} />
+          ) : (
+            <AccuracyRing own={Math.max(0, r.correct - helped)} helped={helped} total={r.total} />
+          )}
+        </Plate>
+      ) : null}
+
+      <Gap h={space.md} />
       <Plate>
         {r.check ? (
           <>

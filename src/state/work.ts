@@ -26,6 +26,11 @@ export function draftHasWork(d: BoardDraft | null | undefined): boolean {
       return d.splits.length > 0;
     case 'rail':
       return d.stop !== null;
+    case 'maze':
+      // The start square is always on the path; anything past it is work.
+      return d.path.length > 1;
+    case 'match':
+      return d.pairs.some((x) => x !== null);
   }
 }
 
@@ -33,7 +38,7 @@ export function sessionHasWork(a: ActiveSession | undefined): boolean {
   if (!a) return false;
   if (a.results.length > 0) return true;
   const p = a.progress;
-  return !!p && (p.hints > 0 || p.ruleRevealed || draftHasWork(p.draft));
+  return !!p && (p.hints > 0 || p.ruleRevealed || !!p.example || draftHasWork(p.draft));
 }
 
 /**

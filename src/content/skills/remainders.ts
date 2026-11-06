@@ -1,13 +1,14 @@
 /**
  * Track 3: Remainders. Five micro-skills, three item families each.
  */
-import { and, makeChoice, makeConstruct, makeNumeric, nearValues, rem, retry } from '../builders';
+import { and, makeChoice, makeConstruct, makeMatch, makeNumeric, nearValues, rem, retry } from '../builders';
 import { describe, fmt, sup, WEEKDAYS } from '../format';
 import { digitSum, randNum } from '../numbers';
 import type { Rng } from '../rng';
 import type { Combo, NumPredicate, Template } from '../types';
 
 const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+const ordinal = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
 const modn = (a: number, d: number) => ((a % d) + d) % d;
 
 // ================================================================ rem.basics
@@ -325,6 +326,56 @@ const basicsRail: Template = {
   },
 };
 
+/**
+ * Match Up for remainders: pair each number with its remainder. The extra card
+ * comes from a common slip: one number's quotient, or the distance up to the
+ * next multiple.
+ */
+const basicsMatch: Template = {
+  id: 'rem.basics/match',
+  skillId: 'rem.basics',
+  board: 'match',
+  version: 1,
+  generate: ({ rng, level }) =>
+    retry(() => {
+      const count = level <= 3 ? 3 : 4;
+      const d = level <= 2 ? rng.int(5, 7) : level <= 5 ? rng.int(6, 9) : rng.int(8, 13);
+      // Four divisions in a row: numbers stay at most four digits, so it's quick work, not long division.
+      const [lo, hi] = level <= 3 ? [10, 99] : level <= 6 ? [100, 999] : [1000, 9999];
+      const rs = rng.shuffle(Array.from({ length: d }, (_, i) => i)).slice(0, count);
+      const cards: { n: number; q: number; r: number }[] = [];
+      for (const r of rs) {
+        const qlo = Math.max(2, Math.ceil((lo - r) / d));
+        const qhi = Math.floor((hi - r) / d);
+        if (qhi < qlo) return null;
+        const q = rng.int(qlo, qhi);
+        cards.push({ n: d * q + r, q, r });
+      }
+      const slips = rng.shuffle([
+        ...cards.filter((c) => c.q < d).map((c) => ({ value: c.q, misconception: 'quotient-for-remainder', of: c })),
+        ...cards.filter((c) => c.r > 0).map((c) => ({ value: d - c.r, misconception: 'distance-to-next-multiple', of: c })),
+      ]);
+      return makeMatch({
+        rng,
+        prompt: `Match each number with its remainder when divided by ${d}. One remainder card is left over.`,
+        lens: RB_LENS,
+        hints: [`Find the largest multiple of ${d} that fits in each number.`, `The remainder is what's left over, and it's always less than ${d}. It isn't the quotient.`],
+        left: cards.map((c) => ({ label: fmt(c.n), spec: { op: 'remainder', n: String(c.n), d }, value: c.r })),
+        decoys: slips,
+        leftTitle: 'Number',
+        rightTitle: `Remainder after ÷ ${d}`,
+        explain: (decoy) => {
+          const of = (decoy as (typeof slips)[number]).of;
+          const why =
+            decoy.misconception === 'quotient-for-remainder'
+              ? `it's the quotient of ${fmt(of.n)} ÷ ${d}, not a remainder`
+              : `it's how far ${fmt(of.n)} is below the next multiple of ${d}, not what's left over`;
+          return `${cards.map((c) => `${fmt(c.n)} = ${d} × ${fmt(c.q)} + ${c.r}`).join('. ')}. The extra card, ${decoy.value}, matches none of them: ${why}.`;
+        },
+      });
+    }),
+};
+
 // ================================================================ rem.cycles
 
 const RC_LENS = 'Units digits of powers repeat in short cycles. 7: 7, 9, 3, 1, then again. Divide the exponent by the cycle length and use the remainder.';
@@ -386,6 +437,58 @@ const cyclesRail: Template = {
       key: { kind: 'rail', stop: pos },
     };
   },
+};
+
+/**
+ * Match Up for power cycles: pair each power with its units digit. The extra
+ * card is the neighbouring digit in one power's cycle: the off-by-one slip of
+ * counting the exponent's remainder from the wrong place.
+ */
+const cyclesMatch: Template = {
+  id: 'rem.cycles/match',
+  skillId: 'rem.cycles',
+  board: 'match',
+  version: 1,
+  generate: ({ rng, level }) =>
+    retry(() => {
+      const count = level <= 4 ? 3 : 4;
+      const bases = level <= 4 ? [2, 3, 7, 8] : [2, 3, 4, 7, 8, 9, 12, 13, 17, 18];
+      const span = level <= 3 ? [5, 24] : level <= 6 ? [25, 99] : [100, 999];
+      const cards: { base: number; exp: number; c: number[]; value: number }[] = [];
+      for (let tries = 0; cards.length < count && tries < 200; tries++) {
+        const base = rng.pick(bases);
+        const exp = rng.int(span[0], span[1]);
+        const { c, value } = powerFromCycle(base, exp, 10);
+        if (cards.some((x) => x.value === value || x.base === base)) continue;
+        cards.push({ base, exp, c, value });
+      }
+      if (cards.length < count) return null;
+      const slips = rng.shuffle(
+        cards.flatMap((x) => {
+          const L = x.c.length;
+          const pos = (x.exp - 1) % L;
+          return [x.c[(pos + 1) % L], x.c[(pos + L - 1) % L]].map((value) => ({ value, misconception: 'cycle-off-by-one', of: x }));
+        }),
+      );
+      return makeMatch({
+        rng,
+        prompt: 'Match each power with its units digit. One card is left over.',
+        lens: RC_LENS,
+        hints: ['Write the cycle of units digits for each base: 7 goes 7, 9, 3, 1, then repeats.', 'Divide each exponent by its cycle length. A remainder of 0 means the last digit in the cycle.'],
+        left: cards.map((x) => ({ label: `${x.base}${sup(x.exp)}`, spec: { op: 'powMod', base: x.base, exp: x.exp, d: 10 }, value: x.value })),
+        decoys: slips,
+        leftTitle: 'Power',
+        rightTitle: 'Units digit',
+        explain: (decoy) =>
+          `${cards
+            .map((x) => {
+              const L = x.c.length;
+              const r = x.exp % L;
+              return `${x.base}${sup(x.exp)}: the cycle is ${cycleText(x.c)}, and ${x.exp} = ${L} × ${Math.floor(x.exp / L)} + ${r}, so ${r === 0 ? 'a whole number of cycles ends on the last digit' : `it's the ${ordinal(r)} in the cycle`}: ${x.value}`;
+            })
+            .join('. ')}. The extra card, ${decoy.value}, sits next to the right digit in the cycle of ${(decoy as (typeof slips)[number]).of.base}: it's what you get by counting one step too far or too short.`,
+      });
+    }),
 };
 
 const cyclesUnits: Template = {
@@ -590,6 +693,7 @@ export const REMAINDER_TEMPLATES: Template[] = [
   basicsChoice,
   basicsWeekday,
   basicsRail,
+  basicsMatch,
   digitRulesSum,
   digitRulesTail,
   digitRulesRepeat,
@@ -598,6 +702,7 @@ export const REMAINDER_TEMPLATES: Template[] = [
   arithmeticTransfer,
   cyclesUnits,
   cyclesRail,
+  cyclesMatch,
   cyclesMod,
   cyclesProduct,
   reverseSmallest,

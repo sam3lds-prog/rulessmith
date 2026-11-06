@@ -1,18 +1,21 @@
+import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { AccessibilityInfo, AppState, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { workedExample } from '../coach/example';
 import { coach } from '../coach/explain';
-import { checkItem, correctAnswerText } from '../content/check';
+import { checkItem, correctAnswerText, mazePathBrute } from '../content/check';
 import { describe, fmt } from '../content/format';
 import type { BoardDraft, CheckResult, Item, Response } from '../content/types';
 import type { Support } from '../engine/types';
 import { feel } from '../feel/director';
 import { GAMES, type GameId } from '../games/registry';
-import type { AnswerRecord, ItemProgress } from '../state/types';
+import type { AnswerRecord, ExplainMode, ItemProgress } from '../state/types';
 import { Body, Button, Eyebrow, Gap, Heading, Label, Small } from '../ui/kit';
+import { Countdown, Rise } from '../ui/motion';
 import { color, depth, font, MAX_WIDTH, radius, space, type } from '../ui/theme';
-import { ChoiceBoard, ConstructBoard, FactorBoard, NumericBoard, RailBoard, RefuteBoard, SortBoard } from './boards';
+import { ChoiceBoard, ConstructBoard, FactorBoard, MatchBoard, MazeBoard, MazePreview, NumericBoard, RailBoard, RefuteBoard, SortBoard } from './boards';
 
 export interface AnswerInfo extends AnswerRecord {
   result: CheckResult;
@@ -22,6 +25,11 @@ const REPORT_REASONS = ['The answer is wrong', 'The question is unclear', 'Somet
 
 /** How often active time is saved while the puzzle is on screen, in case the app is killed without warning. */
 const HEARTBEAT_MS = 10_000;
+
+/** With "explain my mistakes only" or "skip explanations": how long a right answer stays before moving on. */
+export const RIGHT_MS = 1200;
+/** With "skip explanations": how long a wrong answer (verdict and correct answer) stays before moving on. */
+export const WRONG_MS = 4500;
 
 /**
  * One puzzle, start to finish. Key it by item.id so its state resets per item.
@@ -38,6 +46,14 @@ const HEARTBEAT_MS = 10_000;
  * `onRelated` offers a fresh guided puzzle of the same kind. With
  * `feedback="after-set"` (concept checks and drills) nothing on screen or in
  * sound hints at correctness: the answer is saved and the verdicts come at the end.
+ *
+ * Help (one button, three kinds: a hint, the rule, a worked example of the
+ * same kind) is always free; any of it makes the answer helped. `explain`
+ * is the learner's setting for what follows an answer with immediate
+ * feedback: it may move on by itself, but never with a screen reader on (on
+ * phones and tablets; the web can't tell),
+ * never once the learner taps "Stay on this one" or opens the explanation,
+ * and the explanation is always one tap away (and in the recap and mistakes).
  */
 export function ItemScreen({
   item,
@@ -56,6 +72,7 @@ export function ItemScreen({
   feedback = 'immediate',
   onRelated,
   topicId,
+  explain = 'all',
 }: {
   item: Item;
   support: Support;
@@ -68,6 +85,8 @@ export function ItemScreen({
   onRelated?: () => boolean;
   /** The skill, for "See the topic" after a wrong answer. */
   topicId?: string;
+  /** What follows an answer when feedback is immediate (the learner's setting). */
+  explain?: ExplainMode;
   /** Ignored unless it belongs to this item. */
   initialProgress?: ItemProgress;
   onProgress?: (p: ItemProgress) => void;
@@ -86,6 +105,14 @@ export function ItemScreen({
   const [result, setResult] = useState<CheckResult | null>(null);
   const [hints, setHints] = useState(restored?.hints ?? 0);
   const [ruleRevealed, setRuleRevealed] = useState(restored?.ruleRevealed ?? false);
+  const [example, setExample] = useState(restored?.example ?? false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  // Moving on by itself stops for good once the learner stays, opens the explanation or reports.
+  const [stayed, setStayed] = useState(false);
+  const [showFull, setShowFull] = useState(false);
+  // Assume a screen reader until the device says otherwise, so nothing moves on too early.
+  // The web can't tell (react-native-web always says yes), so there the learner's setting decides.
+  const [screenReader, setScreenReader] = useState(Platform.OS !== 'web');
   const [reportOpen, setReportOpen] = useState(false);
   const [reported, setReported] = useState(false);
   const [relatedAdded, setRelatedAdded] = useState(false);
@@ -102,22 +129,46 @@ export function ItemScreen({
   const lensOpen = guided || ruleRevealed;
   const showVerdict = feedback === 'immediate';
   const g = game ? GAMES[game] : null;
+  const ex = useMemo(() => workedExample(item), [item.id, item.templateVersion]);
+  const hintsLeft = hints < item.hints.length;
+  const helpLeft = hintsLeft || (!!item.ruleLens && !lensOpen) || (!!ex && !example);
 
   const activeMs = () => banked.current + (since.current !== null ? Date.now() - since.current : 0);
 
-  const latest = useRef({ draft, hints, ruleRevealed, locked });
+  const latest = useRef({ draft, hints, ruleRevealed, example, locked, onContinue });
   // Kept current after each render (not during it); the saves below read it.
   useEffect(() => {
-    latest.current = { draft, hints, ruleRevealed, locked };
+    latest.current = { draft, hints, ruleRevealed, example, locked, onContinue };
   });
   const report = () => {
     const l = latest.current;
     if (l.locked || !onProgress) return;
-    onProgress({ itemId: item.id, draft: l.draft, hints: l.hints, ruleRevealed: l.ruleRevealed, firstSeenAt: firstSeenAt, activeMs: activeMs() });
+    onProgress({ itemId: item.id, draft: l.draft, hints: l.hints, ruleRevealed: l.ruleRevealed, example: l.example, firstSeenAt: firstSeenAt, activeMs: activeMs() });
   };
 
   // Save on every change to the work, including the first view (so first-seen time survives).
-  useEffect(report, [draft, hints, ruleRevealed]);
+  useEffect(report, [draft, hints, ruleRevealed, example]);
+
+  // Moving on happens once per puzzle, whether from Next, a related problem or the timer.
+  const continued = useRef(false);
+  const go = () => {
+    if (continued.current) return;
+    continued.current = true;
+    latest.current.onContinue();
+  };
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    let live = true;
+    AccessibilityInfo.isScreenReaderEnabled()
+      .then((on) => live && setScreenReader(on))
+      .catch(() => undefined);
+    const sub = AccessibilityInfo.addEventListener('screenReaderChanged', (on) => setScreenReader(on));
+    return () => {
+      live = false;
+      sub.remove();
+    };
+  }, []);
 
   // A tap on the board acknowledges itself at once, the same whatever the answer.
   // Boards report their starting draft once when they mount; that isn't a tap, so it stays silent.
@@ -163,8 +214,8 @@ export function ItemScreen({
     since.current = null;
     onAnswered({
       correct: r.correct,
-      hint: hints > 0 || ruleRevealed,
-      hintsUsed: hints + (ruleRevealed ? 1 : 0),
+      hint: hints > 0 || ruleRevealed || example,
+      hintsUsed: hints + (ruleRevealed ? 1 : 0) + (example ? 1 : 0),
       ruleShown: lensOpen,
       support,
       ms,
@@ -208,8 +259,24 @@ export function ItemScreen({
         return <FactorBoard payload={p} {...common} guided={guided} />;
       case 'rail':
         return <RailBoard payload={p} {...common} guided={guided} />;
+      case 'maze':
+        return <MazeBoard payload={p} {...common} />;
+      case 'match':
+        return <MatchBoard payload={p} {...common} />;
     }
   })();
+
+  // What follows a verdict: the full explanation, or (with the learner's setting) a short
+  // card that moves on by itself after `auto` ms unless they stay or open the explanation.
+  const quick = showVerdict && !compact && result ? (result.correct ? explain !== 'all' : explain === 'skip') : false;
+  const full = !quick || showFull;
+  const auto = quick && result ? (result.correct ? RIGHT_MS : WRONG_MS) : null;
+  const autoOn = auto !== null && locked && !stayed && !showFull && !screenReader;
+  useEffect(() => {
+    if (!autoOn || auto === null) return;
+    const t = setTimeout(go, auto);
+    return () => clearTimeout(t);
+  }, [autoOn]);
 
 
   // After a wrong answer: the learner's own answer, the rule, a worked explanation of this
@@ -250,7 +317,7 @@ export function ItemScreen({
             onPress={() => {
               if (onRelated()) {
                 setRelatedAdded(true);
-                onContinue();
+                go();
               }
             }}
             accessibilityHint="Adds a fresh puzzle of the same kind, with the rule on screen. This answer stays as it is."
@@ -300,15 +367,6 @@ export function ItemScreen({
               <View style={styles.lens} accessibilityLabel={`Rule: ${item.ruleLens}`}>
                 <Text style={[type.small, { color: color.ink }]}>{item.ruleLens}</Text>
               </View>
-            ) : !locked ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityHint="Counts as a hint for this puzzle"
-                onPress={() => setRuleRevealed(true)}
-                style={styles.inlineLink}
-              >
-                <Text style={[type.label, { color: color.action }]}>Show the rule (counts as a hint)</Text>
-              </Pressable>
             ) : null
           ) : null}
 
@@ -317,6 +375,8 @@ export function ItemScreen({
               <Text style={[type.small, { color: color.ink }]}>{h}</Text>
             </View>
           ))}
+
+          {example && ex ? <WorkedExample ex={ex} /> : null}
 
           <Gap h={space.md} />
           <View style={g ? styles.mold : null}>
@@ -342,21 +402,69 @@ export function ItemScreen({
           ) : null}
 
           {locked && result && showVerdict ? (
-            <View style={[styles.feedback, result.correct ? styles.feedbackRight : styles.feedbackWrong]} accessibilityLiveRegion="polite">
-              <Heading style={{ color: result.correct ? color.right : color.wrong }}>{result.correct ? 'Right.' : 'Not quite.'}</Heading>
-              {result.correct || compact ? (
-                !compact ? <Body style={{ fontSize: 16, lineHeight: 24 }}>{item.explanation}</Body> : null
+            <Rise cue={result.correct ? 'right' : 'wrong'} style={[styles.feedback, result.correct ? styles.feedbackRight : styles.feedbackWrong]}>
+              <View accessibilityLiveRegion="polite" style={styles.verdictRow}>
+                <View style={[styles.verdictMark, { backgroundColor: result.correct ? color.right : color.wrong }]}>
+                  <Feather name={result.correct ? 'check' : 'x'} size={16} color={color.white} />
+                </View>
+                <Heading style={{ color: result.correct ? color.right : color.wrong, flex: 1 }}>{result.correct ? 'Right.' : 'Not quite.'}</Heading>
+              </View>
+              {compact ? null : full ? (
+                result.correct ? (
+                  <Body style={{ fontSize: 16, lineHeight: 24 }}>{item.explanation}</Body>
+                ) : (
+                  coaching()
+                )
               ) : (
-                coaching()
+                <>
+                  {!result.correct ? (
+                    <Label>
+                      Answer: <Text style={{ fontFamily: font.bodyBold }}>{answerDisplay(item)}</Text>
+                    </Label>
+                  ) : null}
+                  <Pressable accessibilityRole="button" onPress={() => setShowFull(true)} style={styles.inlineLink}>
+                    <Text style={[type.label, { color: color.action }]}>Show the explanation</Text>
+                  </Pressable>
+                  {!result.correct && onRelated && !relatedAdded ? (
+                    <Button
+                      title="Try a related problem next"
+                      kind="secondary"
+                      onPress={() => {
+                        if (onRelated()) {
+                          setRelatedAdded(true);
+                          go();
+                        }
+                      }}
+                      accessibilityHint="Adds a fresh puzzle of the same kind, with the rule on screen. This answer stays as it is."
+                    />
+                  ) : null}
+                </>
               )}
+              {autoOn && auto !== null ? (
+                <View style={styles.autoRow}>
+                  <Countdown ms={auto} />
+                  <Small>Moving on</Small>
+                  <Pressable accessibilityRole="button" onPress={() => setStayed(true)} hitSlop={8} style={styles.stay}>
+                    <Text style={[type.label, { color: color.action }]}>Stay on this one</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               {!compact && onReport ? (
-                <Pressable accessibilityRole="button" onPress={() => setReportOpen(true)} disabled={reported} style={styles.inlineLink}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setStayed(true);
+                    setReportOpen(true);
+                  }}
+                  disabled={reported}
+                  style={styles.inlineLink}
+                >
                   <Text style={[type.small, { color: reported ? color.inkFaint : color.action }]}>
                     {reported ? 'Thanks. This puzzle has been reported.' : 'Report a problem with this puzzle'}
                   </Text>
                 </Pressable>
               ) : null}
-            </View>
+            </Rise>
           ) : null}
         </View>
       </ScrollView>
@@ -364,22 +472,69 @@ export function ItemScreen({
       <View style={styles.footerWrap}>
         <View style={styles.footer}>
           {locked ? (
-            <Button title={continueLabel} onPress={onContinue} />
+            <Button title={continueLabel} onPress={go} />
           ) : (
             <View style={{ flexDirection: 'row', gap: space.md }}>
               <Button
-                title={hints >= item.hints.length ? 'No more hints' : hints === 0 ? 'Hint' : 'Another hint'}
+                title={helpLeft ? 'Help' : 'No more help'}
                 kind="secondary"
-                onPress={() => setHints((h) => Math.min(item.hints.length, h + 1))}
-                disabled={hints >= item.hints.length}
+                onPress={() => setHelpOpen(true)}
+                disabled={!helpLeft}
                 style={{ flex: 1 }}
-                accessibilityHint="A hint before answering makes this puzzle practice rather than proof"
+                accessibilityHint="A hint, the rule or a worked example. Help makes this answer practice rather than proof."
               />
               <Button title={g?.submitLabel ?? (showVerdict ? 'Check' : 'Save answer')} onPress={submit} disabled={!response} style={{ flex: 1.4 }} />
             </View>
           )}
         </View>
       </View>
+
+      <Modal visible={helpOpen && !locked} transparent animationType="fade" onRequestClose={() => setHelpOpen(false)}>
+        <Pressable style={styles.scrim} onPress={() => setHelpOpen(false)} accessibilityLabel="Close help">
+          <Pressable style={styles.sheet} onPress={() => undefined} accessibilityViewIsModal>
+            <Heading>Help with this puzzle</Heading>
+            <Small>
+              {guided
+                ? 'Help is always free.'
+                : 'Help is always free. An answer with help counts as practice; answers on your own are what make a skill Secure.'}
+            </Small>
+            <Gap h={space.xs} />
+            <HelpRow
+              icon="help-circle"
+              title="A hint"
+              detail={hintsLeft ? `Hint ${hints + 1} of ${item.hints.length}` : "You've seen every hint"}
+              disabled={!hintsLeft}
+              onPress={() => {
+                setHints((h) => Math.min(item.hints.length, h + 1));
+                setHelpOpen(false);
+              }}
+            />
+            {item.ruleLens && !lensOpen ? (
+              <HelpRow
+                icon="eye"
+                title="Show the rule"
+                detail="The rule for this kind of puzzle"
+                onPress={() => {
+                  setRuleRevealed(true);
+                  setHelpOpen(false);
+                }}
+              />
+            ) : null}
+            {ex && !example ? (
+              <HelpRow
+                icon="book-open"
+                title="A worked example"
+                detail="A solved puzzle of the same kind, with different numbers"
+                onPress={() => {
+                  setExample(true);
+                  setHelpOpen(false);
+                }}
+              />
+            ) : null}
+            <Button title="Back to the puzzle" kind="quiet" onPress={() => setHelpOpen(false)} />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={reportOpen} transparent animationType="fade" onRequestClose={() => setReportOpen(false)}>
         <Pressable style={styles.scrim} onPress={() => setReportOpen(false)} accessibilityLabel="Close">
@@ -408,6 +563,43 @@ export function ItemScreen({
 }
 
 const capitalize = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+function HelpRow({ icon, title, detail, onPress, disabled }: { icon: React.ComponentProps<typeof Feather>['name']; title: string; detail: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${detail}`}
+      accessibilityState={{ disabled: !!disabled }}
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [styles.helpRow, disabled && { opacity: 0.45 }, pressed && { backgroundColor: color.paperDeep }]}
+    >
+      <View style={styles.helpIcon}>
+        <Feather name={icon} size={18} color={color.action} />
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={type.label}>{title}</Text>
+        <Text style={type.small}>{detail}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/** A solved puzzle of the same kind: its prompt, its answer (from the checker) and its audited explanation. */
+function WorkedExample({ ex }: { ex: Item }) {
+  const p = ex.payload;
+  const route = p.kind === 'maze' ? mazePathBrute(p) : null;
+  return (
+    <View style={styles.exampleBox} accessibilityLabel="Worked example">
+      <Label style={{ color: color.actionDeep }}>Worked example</Label>
+      <Text style={[type.small, { color: color.ink, fontFamily: font.bodyBold }]}>{ex.prompt}</Text>
+      {p.kind === 'refute' ? <Small style={{ color: color.ink }}>Claim: {p.claimText}</Small> : null}
+      {p.kind === 'maze' && route ? <MazePreview payload={p} path={route} /> : null}
+      {p.kind !== 'sort' && p.kind !== 'maze' ? <Small style={{ color: color.ink }}>Answer: {answerDisplay(ex)}</Small> : null}
+      <Small>{ex.explanation}</Small>
+    </View>
+  );
+}
 
 /** The correct answer, for the feedback card and the end-of-set review. */
 export function answerDisplay(item: Item): string {
@@ -446,6 +638,10 @@ export function responseDisplay(item: Item, r: Response | undefined): string {
       return r.primes.map((q) => fmt(q)).join(' × ');
     case 'rail':
       return p.kind === 'rail' ? (p.stops[r.stop]?.label ?? '') : '';
+    case 'maze':
+      return p.kind === 'maze' ? r.path.map((c) => (p.cells[c] !== undefined ? fmt(p.cells[c]) : '?')).join(' → ') : '';
+    case 'match':
+      return p.kind === 'match' ? r.pairs.map((j, i) => `${p.left[i]?.label} → ${p.right[j]?.label ?? '?'}`).join(', ') : '';
   }
 }
 
@@ -480,6 +676,21 @@ const styles = StyleSheet.create({
   feedbackWrong: { borderColor: color.rule, borderLeftColor: color.wrong },
   example: { borderLeftWidth: 3, borderLeftColor: color.ruleStrong, paddingLeft: space.md, gap: 4, marginTop: space.xs },
   feedbackNeutral: { backgroundColor: color.surface, borderColor: color.rule },
+  verdictRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  verdictMark: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  autoRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 40 },
+  stay: { minHeight: 40, justifyContent: 'center' },
+  helpRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 60, paddingVertical: space.sm, paddingHorizontal: space.xs, borderRadius: radius.md },
+  helpIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: color.actionWash, alignItems: 'center', justifyContent: 'center' },
+  exampleBox: {
+    backgroundColor: color.actionWash,
+    borderRadius: radius.sm,
+    borderLeftWidth: 4,
+    borderLeftColor: color.action,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+    gap: 6,
+  },
   gameHead: { flexDirection: 'row', alignItems: 'center', gap: space.md, marginBottom: space.xs },
   gameTitle: { fontFamily: font.display, fontSize: 24, lineHeight: 30, letterSpacing: -0.4, color: color.ink },
   mold: {

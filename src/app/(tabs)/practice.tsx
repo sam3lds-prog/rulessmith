@@ -17,6 +17,7 @@ import { adsLive, useApp, type StartResult } from '../../state/store';
 import { AppHeader } from '../../ui/AppHeader';
 import { Button, Chip, Eyebrow, Gap, Heading, Label, LinkRow, Micro, Plate, Screen, Small, Stamp, Title } from '../../ui/kit';
 import { color, radius, space, type } from '../../ui/theme';
+import { TrackGlyph } from '../../ui/motion';
 import { useStart } from '../../ui/useStart';
 import { useNow } from '../../ui/useNow';
 import { useRecord } from '../../ui/useRecord';
@@ -93,6 +94,7 @@ export default function Practice() {
 
         <Plate style={{ marginTop: space.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.sm }}>
+            <TrackGlyph track={skill.track} size={36} />
             <View style={{ flex: 1 }}>
               <Heading>{skill.name}</Heading>
               <Small>{skill.summary}.</Small>

@@ -13,6 +13,7 @@ import { mistakes } from '../../review/mistakes';
 import { useApp, type StartResult } from '../../state/store';
 import { BackLink, Body, Button, Eyebrow, Gap, Heading, Label, LinkRow, Plate, Screen, Small, Stamp, Title } from '../../ui/kit';
 import { color, font, radius, space, type } from '../../ui/theme';
+import { TrackGlyph } from '../../ui/motion';
 import { useStart } from '../../ui/useStart';
 import { useNow } from '../../ui/useNow';
 import { useRecord } from '../../ui/useRecord';
@@ -82,10 +83,15 @@ export default function Topic() {
       }
     >
       <BackLink />
-      <Eyebrow>{track?.name}</Eyebrow>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.sm, marginTop: space.xs }}>
-        <Title style={{ flex: 1 }}>{skill.name}</Title>
-        <Stamp status={status} />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+        <TrackGlyph track={skill.track} size={44} tone="solid" />
+        <View style={{ flex: 1 }}>
+          <Eyebrow>{track?.name}</Eyebrow>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.sm, marginTop: 2 }}>
+            <Title style={{ flex: 1 }}>{skill.name}</Title>
+            <Stamp status={status} />
+          </View>
+        </View>
       </View>
       <Body style={{ marginTop: space.xs }}>{skill.outcome}</Body>
       <Small style={{ marginTop: space.xs }}>{skill.why}</Small>

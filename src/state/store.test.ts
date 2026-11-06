@@ -5,9 +5,26 @@
  * overwriting, and a hint or a half-done puzzle survives a restart.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { checkItem, TEMPLATE_BY_ID, type Item, type Response } from '../content';
+import { checkItem, TEMPLATE_BY_ID, type Item, type MatchPayload, type MazePayload, type Response } from '../content';
 import { visibleRecord } from './work';
 import type { Attempt } from '../engine/types';
+
+/** Wrong-looking maze answers: along the edges (structurally valid), or a path that stops at the start. */
+function mazeTries(p: MazePayload): Response[] {
+  const { rows, cols } = p;
+  const top = [...Array.from({ length: cols }, (_, k) => k), ...Array.from({ length: rows - 1 }, (_, r) => (r + 1) * cols + cols - 1)];
+  const left = [...Array.from({ length: rows }, (_, r) => r * cols), ...Array.from({ length: cols - 1 }, (_, k) => (rows - 1) * cols + k + 1)];
+  return [{ kind: 'maze', path: top }, { kind: 'maze', path: left }, { kind: 'maze', path: [p.start] }];
+}
+
+/** Wrong match answers: every pair shifted by one card, or every card paired with the first. */
+function matchTries(p: MatchPayload): Response[] {
+  return [
+    { kind: 'match', pairs: p.left.map((_, i) => (i + 1) % p.right.length) },
+    { kind: 'match', pairs: p.left.map(() => 0) },
+  ];
+}
+
 
 const h = vi.hoisted(() => {
   const g = globalThis as Record<string, any>;
@@ -149,6 +166,10 @@ function wrongResponse(item: Item): Response {
               ? [{ kind: 'factor', primes: [p.n] }]
               : p.kind === 'rail'
                 ? p.stops.map((_, i) => ({ kind: 'rail' as const, stop: i }))
+              : p.kind === 'maze'
+                ? mazeTries(p)
+              : p.kind === 'match'
+                ? matchTries(p)
                 : p.mode === 'all'
               ? [{ kind: 'constructAll', digits: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] }, { kind: 'constructAll', digits: [0] }]
               : Array.from({ length: 10 }, (_, d) => ({ kind: 'construct' as const, digits: p.fixed.filter((x) => x === null).map(() => d) }));

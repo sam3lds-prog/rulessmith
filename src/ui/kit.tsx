@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { DisplayStatus } from '../engine/types';
+import { useMotion } from '../feel/director';
 import { color, depth, font, MAX_WIDTH, radius, space, type } from './theme';
 
 // ---------------------------------------------------------------- text
@@ -105,6 +106,8 @@ export function Button({
   accessibilityHint?: string;
 }) {
   const k = buttonKinds[kind];
+  // A slight give under the finger, instead of a deep 3D sink. None with reduced motion.
+  const motion = useMotion();
   return (
     <Pressable
       accessibilityRole="button"
@@ -116,6 +119,7 @@ export function Button({
         styles.button,
         k.box,
         pressed && !disabled && k.pressed,
+        pressed && !disabled && motion && styles.buttonGive,
         disabled && styles.buttonDisabled,
         style,
       ]}
@@ -127,13 +131,13 @@ export function Button({
 
 const buttonKinds: Record<ButtonKind, { box: ViewStyle; pressed: ViewStyle; text: TextStyle }> = {
   primary: {
-    box: { backgroundColor: color.action, borderBottomWidth: 4, borderBottomColor: color.actionDeep },
-    pressed: { borderBottomWidth: 1, marginTop: 3 },
+    box: { backgroundColor: color.action, borderBottomWidth: 2, borderBottomColor: color.actionDeep },
+    pressed: { backgroundColor: color.actionDeep },
     text: { color: color.white },
   },
   secondary: {
-    box: { backgroundColor: color.surface, borderWidth: 1.5, borderColor: color.ruleStrong, borderBottomWidth: 4, borderBottomColor: depth.key },
-    pressed: { borderBottomWidth: 1.5, marginTop: 2.5 },
+    box: { backgroundColor: color.surface, borderWidth: 1.5, borderColor: color.ruleStrong, borderBottomWidth: 2.5, borderBottomColor: depth.key },
+    pressed: { backgroundColor: color.paperDeep },
     text: { color: color.ink },
   },
   quiet: {
@@ -294,6 +298,7 @@ const styles = StyleSheet.create({
   button: { minHeight: 52, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.xl },
   buttonText: { fontFamily: font.heading, fontSize: 17, letterSpacing: -0.1 },
   buttonDisabled: { opacity: 0.4 },
+  buttonGive: { transform: [{ scale: 0.98 }] },
   chip: {
     minHeight: 44,
     paddingHorizontal: space.lg,

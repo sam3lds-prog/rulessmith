@@ -13,6 +13,7 @@ import { canOfferRewarded } from '../../policy/ads';
 import { weeklyProgress } from '../../rewards/ledger';
 import { adsLive, useApp } from '../../state/store';
 import { AppHeader } from '../../ui/AppHeader';
+import { TrackGlyph } from '../../ui/motion';
 import { Button, Eyebrow, Gap, Label, LinkRow, Micro, Plate, Screen, Small, statusLabel, Title } from '../../ui/kit';
 import { color, space, type } from '../../ui/theme';
 import { useStart } from '../../ui/useStart';
@@ -73,8 +74,13 @@ export default function Today() {
         </Plate>
       ) : null}
 
-      <Eyebrow>Recommended for you</Eyebrow>
-      <Title style={{ marginTop: space.xs }}>{recommended.name}</Title>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+        <TrackGlyph track={recommended.track} size={44} tone="solid" />
+        <View style={{ flex: 1 }}>
+          <Eyebrow>Recommended for you</Eyebrow>
+          <Title style={{ marginTop: 2 }}>{recommended.name}</Title>
+        </View>
+      </View>
       <Small style={{ marginTop: 2 }}>{recommended.summary}.</Small>
       <Small style={{ marginTop: space.xs, color: color.ink }}>{reasonText}</Small>
       <Gap h={space.md} />

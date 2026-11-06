@@ -8,6 +8,7 @@ import { gameForItem } from '../games/registry';
 import { CHAPTER_BY_ID, MISSION_BY_ID } from '../quests/chapters';
 import { useApp } from '../state/store';
 import { Micro } from '../ui/kit';
+import { Segment } from '../ui/motion';
 import { color, space, type } from '../ui/theme';
 
 export default function Session() {
@@ -22,6 +23,7 @@ export default function Session() {
   const abandon = useApp((s) => s.abandonSession);
   const report = useApp((s) => s.report);
   const addRelatedSlot = useApp((s) => s.addRelatedSlot);
+  const explain = useApp((s) => s.settings.explain);
   const answered = useRef(false);
   const slot = active?.slots[active.index];
   const slotKey = slot ? `${slot.templateId}@${slot.level}#${slot.seed}/v${slot.version}` : '';
@@ -93,8 +95,8 @@ export default function Session() {
           {Array.from({ length: total }, (_, i) => {
             const r = active.results[i];
             // In a check the bar shows progress only: answered, current, to come. Never right or wrong.
-            const done = r ? (active.feedback === 'after-set' ? { backgroundColor: color.actionDeep } : { backgroundColor: r.correct ? color.right : color.wrong }) : null;
-            return <View key={i} style={[styles.seg, done ?? (i === active.index ? { backgroundColor: color.action } : null)]} />;
+            const fill = r ? (active.feedback === 'after-set' ? color.actionDeep : r.correct ? color.right : color.wrong) : color.action;
+            return <Segment key={i} filled={!!r} fill={fill} base={i === active.index ? color.action : color.paperDeep} />;
           })}
         </View>
       ) : null}
@@ -121,6 +123,7 @@ export default function Session() {
       game={game}
       eyebrow={eyebrow}
       feedback={active.feedback}
+      explain={explain}
       onRelated={active.feedback === 'immediate' && !active.ladder && !active.challenge ? addRelatedSlot : undefined}
       topicId={item.skillId}
       header={header}
@@ -150,5 +153,4 @@ const styles = StyleSheet.create({
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
   end: { minHeight: 36, justifyContent: 'center' },
   track: { flexDirection: 'row', gap: 4 },
-  seg: { flex: 1, height: 6, borderRadius: 3, backgroundColor: color.paperDeep },
 });

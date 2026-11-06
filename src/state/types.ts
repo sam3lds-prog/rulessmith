@@ -25,6 +25,8 @@ export interface ItemProgress {
   hints: number;
   /** A hidden rule was opened (independent items). That makes the answer hinted. */
   ruleRevealed: boolean;
+  /** A worked example of the same kind was opened. Counts as help, like a hint. */
+  example?: boolean;
   firstSeenAt: number;
   /** Time on the puzzle with the app in the foreground. */
   activeMs: number;
@@ -123,6 +125,15 @@ export interface CheckRecord {
   /** templateId: only on records made since notes became per-family (older ones show no note). */
   missed: { skillId: string; misconception?: string; templateId?: string }[];
 }
+
+/**
+ * What happens after an answer when feedback is immediate (never in checks):
+ * 'all' explains every answer and waits for Next; 'mistakes' moves on by
+ * itself after a right answer; 'skip' also shortens a wrong answer to the
+ * verdict and the correct answer, with the explanation one tap away, then
+ * moves on. Explanations stay in the recap and in mistakes whatever is chosen.
+ */
+export type ExplainMode = 'all' | 'mistakes' | 'skip';
 
 /** How feedback feels. Device-level: kept when the learner changes. */
 export interface FeelSettings {
@@ -239,7 +250,7 @@ export interface Data {
   quests: Record<string, QuestRecord>;
   checks: CheckRecord[];
   /** Device-level. */
-  settings: { previewAds: boolean } & FeelSettings;
+  settings: { previewAds: boolean; explain: ExplainMode } & FeelSettings;
   placement?: PlacementProgress;
   active?: ActiveSession;
   lastRecap?: Recap;
@@ -279,7 +290,7 @@ export const INITIAL: Data = {
   reports: [],
   quests: {},
   checks: [],
-  settings: { previewAds: false, sound: true, haptics: true, reduceMotion: false },
+  settings: { previewAds: false, explain: 'all', sound: true, haptics: true, reduceMotion: false },
   account: { mode: 'none' },
 };
 
