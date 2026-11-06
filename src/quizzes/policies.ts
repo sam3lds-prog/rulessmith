@@ -206,6 +206,9 @@ export const MISCONCEPTION_NOTES: Record<string, string> = {
   'excluded-1-and-n': '1 and the number itself are factors too.',
   'exponent-sum': 'Multiply the (exponent + 1) terms; don’t add them.',
   'cycle-off-by-one': 'In a cycle, a remainder of 0 means the last position, not the first.',
+  'cycle-step-off': "Count places in the cycle from the first power: the exponent's remainder picks the place, and a remainder of 0 is the last place.",
+  'quotient-for-remainder': 'The remainder is what is left after the full groups. How many full groups there are is the quotient.',
+  'distance-to-next-multiple': 'The remainder counts up from the multiple below the number, not down from the multiple above it.',
   'used-exponent-remainder': 'Divide the exponent by the cycle length, then find that position in the cycle.',
   'multiple-not-remainder': 'The remainder is what is left over, not the multiple below it.',
   'quotient-confusion': 'The question asks for the remainder, not how many times it divides.',
@@ -227,6 +230,8 @@ export const REVIEWED_NOTES: Record<string, string[]> = {
   'pf.divisor-count/choose': ['forgot-plus-one', 'exponent-sum', 'excluded-1-and-n'],
   'pf.gcd-lcm/choose': ['multiplied-instead-of-lcm', 'swapped-gcd-lcm', 'common-multiple-not-least', 'smaller-number-is-gcd', 'common-divisor-not-greatest'],
   'rem.digit-rules/last-digits': ['used-digit-sum'],
+  'rem.basics/match': ['quotient-for-remainder', 'distance-to-next-multiple'],
+  'rem.cycles/match': ['cycle-step-off'],
 };
 
 /** The reviewed note for a tagged wrong answer in this family, if there is one. */

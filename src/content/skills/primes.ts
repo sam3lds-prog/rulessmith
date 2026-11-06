@@ -11,11 +11,13 @@ import {
   type Distractor,
   k,
   makeChoice,
+  makeMaze,
   makeNumeric,
   makeRefute,
   makeSort,
   nearValues,
   rem,
+  retry,
   sq,
 } from '../builders';
 import { factorLabel, fmt, sup } from '../format';
@@ -202,6 +204,48 @@ const primesTransfer: Template = {
       unit: 'rows',
     });
   },
+};
+
+/**
+ * Number Maze for primes: walk corner to corner on primes only. From level 3
+ * the squares beside the route are odd composites that look prime (not even,
+ * not ending in 5, digits not adding to a multiple of 3), such as 91 = 7 × 13.
+ */
+const primesMaze: Template = {
+  id: 'pf.primes/maze',
+  skillId: 'pf.primes',
+  board: 'maze',
+  version: 1,
+  generate: ({ rng, level }) =>
+    retry(() => {
+      const [lo, hi] = level <= 2 ? [2, 60] : level <= 4 ? [2, 150] : level <= 7 ? [100, 400] : [200, 1000];
+      const between = (r: Rng, test: (n: number) => boolean) => {
+        for (let i = 0; i < 4000; i++) {
+          const n = r.int(lo, hi);
+          if (test(n)) return String(n);
+        }
+        throw new Error('primesMaze: nothing in range');
+      };
+      const looksPrime = (n: number) => n % 2 === 1 && n % 5 !== 0 && digitSum(String(n)) % 3 !== 0;
+      return makeMaze({
+        rng,
+        level,
+        p: { op: 'prime' },
+        label: 'primes',
+        lens: PR_LENS,
+        hints: [
+          'Before each step, test the squares next to you: try 2, 3, 5, 7 and so on, up to the square root.',
+          'Odd numbers can still be composite: 7 × 7 = 49 and 7 × 13 = 91 both look prime at first.',
+        ],
+        pass: (r) => between(r, isPrimeSmall),
+        fail: (r, near) => between(r, (n) => !isPrimeSmall(n) && (!near || looksPrime(n))),
+        trap: (s) => {
+          const n = Number(s);
+          const f = smallestFactor(n);
+          return looksPrime(n) && f !== n ? `${fmt(n)} = ${f} × ${fmt(n / f)}` : null;
+        },
+      });
+    }),
 };
 
 // ================================================================ pf.factorize
@@ -712,6 +756,7 @@ const powersRefute: Template = {
 export const PRIMES_TEMPLATES: Template[] = [
   primesSort,
   primesRefute,
+  primesMaze,
   primesTransfer,
   factorizeChoice,
   factorizeTree,

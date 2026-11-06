@@ -8,7 +8,7 @@
  * (content.test.ts) can confirm the generator and the checker agree.
  */
 
-export type BoardKind = 'sort' | 'construct' | 'refute' | 'choice' | 'numeric' | 'factor' | 'rail';
+export type BoardKind = 'sort' | 'construct' | 'refute' | 'choice' | 'numeric' | 'factor' | 'rail' | 'maze' | 'match';
 
 /** A property of a single whole number. Evaluated with BigInt arithmetic. */
 export type NumPredicate =
@@ -149,7 +149,40 @@ export interface RailPayload {
   loop: number;
 }
 
-export type Payload = SortPayload | ConstructPayload | RefutePayload | ChoicePayload | NumericPayload | FactorPayload | RailPayload;
+/**
+ * Number Maze: a grid of numbers, read row by row. The learner walks from
+ * `start` to `end` one square at a time (up, down, left or right), stepping
+ * only on numbers that meet `p`. Any such path is right: the checker walks the
+ * learner's path and tests every number on it by brute force.
+ */
+export interface MazePayload {
+  kind: 'maze';
+  rows: number;
+  cols: number;
+  /** Row by row, left to right. */
+  cells: string[];
+  p: NumPredicate;
+  start: number;
+  end: number;
+  /** The condition in the learner's words, shown on the board: "multiples of 3". */
+  label: string;
+}
+
+/**
+ * Match Up: pair each card on the left with the right-hand card that holds its
+ * value (a remainder, a units digit). The checker computes each left card's
+ * value from its `spec`. Right-hand values are distinct, so every left card
+ * has exactly one partner, and the extra right-hand card matches nothing.
+ */
+export interface MatchPayload {
+  kind: 'match';
+  left: { label: string; spec: ValueSpec }[];
+  right: { label: string; value: number; misconception?: string }[];
+  leftTitle: string;
+  rightTitle: string;
+}
+
+export type Payload = SortPayload | ConstructPayload | RefutePayload | ChoicePayload | NumericPayload | FactorPayload | RailPayload | MazePayload | MatchPayload;
 
 export type Response =
   | { kind: 'sort'; yes: number[] }
@@ -160,7 +193,11 @@ export type Response =
   | { kind: 'choice'; optionId: string }
   | { kind: 'numeric'; value: string }
   | { kind: 'factor'; primes: number[] }
-  | { kind: 'rail'; stop: number };
+  | { kind: 'rail'; stop: number }
+  /** Cell indices from start to end, in walking order. */
+  | { kind: 'maze'; path: number[] }
+  /** For each left card, the index of the right card paired with it. */
+  | { kind: 'match'; pairs: number[] };
 
 export interface Item {
   /** `${templateId}@${level}#${seed}` — enough to regenerate the item exactly. */
@@ -199,11 +236,13 @@ export type BoardDraft =
   | { kind: 'numeric'; text: string }
   /** Each split: the path of the piece split ('' = the whole number, then 'a'/'b' for its two parts) and the divisor used. */
   | { kind: 'factor'; splits: { path: string; d: number }[] }
-  | { kind: 'rail'; stop: number | null };
+  | { kind: 'rail'; stop: number | null }
+  | { kind: 'maze'; path: number[] }
+  | { kind: 'match'; pairs: (number | null)[] };
 
 export interface CheckResult {
   correct: boolean;
-  /** Per-number marks for sort boards: true = placed correctly. */
+  /** Per-number marks: sort (placed correctly), maze (each step meets the condition), match (each pair is right). */
   marks?: boolean[];
   /** For construct and refute boards: the full solution set, shown after answering. */
   solutions?: string[];

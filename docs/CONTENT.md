@@ -4,13 +4,18 @@ Math practice grows by adding **template families**, not by writing questions on
 
 ## What exists today
 
-18 micro-skills in three tracks, 58 families (at least three per skill, at least one a transfer family):
+18 micro-skills in three tracks, 62 families (at least three per skill, at least one a transfer family):
 
 - **Divisibility** (8): last-digit rules, digit sums, last digits for 4 and 8, two rules at once (6, 15, 18), the rule for 11, combining rules (12, 24, 36, 45, 72), sums and products, build to spec.
 - **Primes and factors** (5): spotting primes, prime factorization, counting factors, GCD and LCM, squares and cubes.
 - **Remainders** (5): basics, remainders from digits, remainder arithmetic, cycles and units digits, working backwards.
 
-Games are chosen per topic from the board each family uses (`src/games/registry.ts`): sort → Pattern Sort, construct → Missing Digit, refute → Rule Detective, factor → Factor Split, rail → Remainder Loop; choice and numeric families are practised as questions. Paths name templates and levels in `src/quests/chapters.ts`; if you change or retire a template a path uses, update the path step and bump its `version`.
+Games are chosen per topic from the board each family uses (`src/games/registry.ts`): sort → Pattern Sort, maze → Number Maze, construct → Missing Digit, refute → Rule Detective, factor → Factor Split, rail → Remainder Loop, match → Match Up; choice and numeric families are practised as questions. Number Maze families today: `div.digit-sum/maze`, `pf.primes/maze`. Match Up: `rem.basics/match`, `rem.cycles/match`. Paths name templates and levels in `src/quests/chapters.ts`; if you change or retire a template a path uses, update the path step and bump its `version`.
+
+### Number Maze and Match Up
+
+- **Number Maze** (`makeMaze` in `builders.ts`): give it a predicate, the condition in the learner's words ("multiples of 3"), and two samplers: numbers that pass, and numbers that fail (with a `near` flag for near misses). It carves a route that never touches itself, adds dead ends from level 4, puts near misses beside the route from level 3, and checks the route with the rule-based evaluator. The checker accepts any path from start to finish that steps to neighbours only and passes the predicate by brute force. Grids are at most five columns wide so a 320 px phone fits them.
+- **Match Up** (`makeMatch`): give it the left cards (a label and a `ValueSpec`) and candidate extra cards, each named by its slip (`quotient-for-remainder`, `distance-to-next-multiple`, `cycle-step-off`). The checker records the slip when a learner picks that card, and the reviewed notes for those slips are allowed for the two Match Up families in `REVIEWED_NOTES`. Right-hand values must be distinct; the audit checks that each left card has exactly one partner and the extra card has none.
 
 Coaching (`src/coach/explain.ts`) reads a family's structured payload, so a new family gets response-specific explanations when it uses an existing payload shape; otherwise it falls back to the family's own explanation, which the audit already checks. If you add a misconception tag to a distractor, add a reviewed note to `MISCONCEPTION_NOTES`, or it won't be shown.
 

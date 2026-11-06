@@ -20,7 +20,7 @@ import type {
 import { optionIsCorrect } from '../content/check';
 import { fmt } from '../content/format';
 import { Small } from '../ui/kit';
-import { color, font, radius, space, type } from '../ui/theme';
+import { color, depth, font, radius, space, type } from '../ui/theme';
 import { Keypad } from './Keypad';
 import { Tile } from './Tile';
 
@@ -650,3 +650,309 @@ export function RailBoard({
     </View>
   );
 }
+
+// ================================================================ maze (Number Maze)
+
+const mazeAdjacent = (cols: number, a: number, b: number) => {
+  const ra = Math.floor(a / cols);
+  const rb = Math.floor(b / cols);
+  return (ra === rb && Math.abs((a % cols) - (b % cols)) === 1) || (a % cols === b % cols && Math.abs(ra - rb) === 1);
+};
+
+/** A saved path is used only if it still fits this maze: from the start, one neighbour at a time, no repeats. */
+function validDraftPath(p: import('../content/types').MazePayload, d: BoardDraft | null | undefined): number[] | null {
+  if (d?.kind !== 'maze' || d.path[0] !== p.start) return null;
+  const n = p.rows * p.cols;
+  const ok = d.path.every((c, i) => Number.isInteger(c) && c >= 0 && c < n && (i === 0 || mazeAdjacent(p.cols, d.path[i - 1], c))) && new Set(d.path).size === d.path.length;
+  return ok ? d.path : null;
+}
+
+/**
+ * Number Maze: tap squares to walk from the start to the finish. A tap on a
+ * neighbour of your last square steps there; a tap on a square already on
+ * your path backs up to it. The board never says whether a number fits the
+ * rule; that's the puzzle.
+ */
+export function MazeBoard({ payload, locked, result, onChange, initialDraft, onDraft }: BoardProps<import('../content/types').MazePayload>) {
+  const { rows, cols, cells, start, end } = payload;
+  const [path, setPath] = useState<number[]>(() => validDraftPath(payload, initialDraft) ?? [start]);
+  const [note, setNote] = useState<string | null>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    onDraft?.({ kind: 'maze', path });
+    onChange(path[path.length - 1] === end ? { kind: 'maze', path } : null);
+  }, [path]);
+
+  const last = path[path.length - 1];
+  const tap = (c: number) => {
+    if (locked) return;
+    // Built from the latest path, so two fast taps never act on a stale one.
+    setPath((prev) => {
+      const at = prev.indexOf(c);
+      const tip = prev[prev.length - 1];
+      // Back up: to the tapped square, or one step if it's the last one.
+      if (at >= 0) return at === prev.length - 1 && at > 0 ? prev.slice(0, -1) : prev.slice(0, at + 1);
+      if (tip === end || !mazeAdjacent(cols, tip, c)) return prev;
+      return [...prev, c];
+    });
+    // The note is only a nudge, so it reads the path as shown.
+    if (path.includes(c) || (last !== end && mazeAdjacent(cols, last, c))) setNote(null);
+    else if (last === end) setNote("You've reached the finish. Tap a square on your path to back up.");
+    else setNote('Step to a square next to your last one: up, down, left or right.');
+  };
+
+  const gap = 6;
+  const size = width ? Math.min(72, Math.floor((width - gap * (cols - 1)) / cols)) : 56;
+  const longest = Math.max(...cells.map((c) => c.length));
+  const fontSize = Math.min(22, Math.floor(size / Math.max(2.4, longest * 0.62)));
+
+  return (
+    <View style={{ gap: space.md }}>
+      <View style={ms.mazeLegend}>
+        <Small style={{ color: color.ink }}>Step only on {payload.label}.</Small>
+        <Small>
+          {last === end ? 'At the finish.' : `${path.length - 1} step${path.length === 2 ? '' : 's'} so far.`}
+        </Small>
+      </View>
+      <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={{ gap }} accessibilityLabel={`A maze of ${rows} rows and ${cols} columns`}>
+        {Array.from({ length: rows }, (_, r) => (
+          <View key={r} style={{ flexDirection: 'row', gap, justifyContent: 'center' }}>
+            {Array.from({ length: cols }, (_, k) => {
+              const c = r * cols + k;
+              const step = path.indexOf(c);
+              const on = step >= 0;
+              const judged = locked && !!result && on;
+              const good = judged && result.marks ? result.marks[step] : undefined;
+              const next = !locked && !on && last !== end && mazeAdjacent(cols, last, c);
+              const flag = c === start ? 'Start' : c === end ? 'Finish' : null;
+              return (
+                <Pressable
+                  key={c}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Row ${r + 1}, column ${k + 1}: ${fmt(cells[c])}${flag ? `, ${flag.toLowerCase()}` : ''}${on ? `, step ${step + 1} of your path` : ''}${next ? ', next to your last square' : ''}${good === true ? ', fits' : good === false ? ", doesn't fit" : ''}`}
+                  accessibilityState={{ selected: on, disabled: locked }}
+                  onPress={() => tap(c)}
+                  disabled={locked}
+                  hitSlop={2}
+                  style={({ pressed }) => [
+                    ms.mazeCell,
+                    { width: size, height: size },
+                    next && ms.mazeNext,
+                    on && ms.mazeOn,
+                    on && c === last && !locked && ms.mazeLast,
+                    good === true && ms.mazeRight,
+                    good === false && ms.mazeWrong,
+                    judged && good === undefined && ms.mazeOn,
+                    pressed && !locked && { opacity: 0.85 },
+                  ]}
+                >
+                  {flag ? <Text style={[ms.mazeFlag, { color: on && good === undefined ? color.white : color.inkSoft }]}>{flag}</Text> : null}
+                  <Text style={[ms.mazeNum, { fontSize, color: on && good === undefined ? color.white : color.ink }]} numberOfLines={1}>
+                    {fmt(cells[c])}
+                  </Text>
+                  {on && step > 0 && !flag ? <Text style={[ms.mazeStep, { color: good === undefined ? color.actionWash : color.inkSoft }]}>{step}</Text> : null}
+                  {good !== undefined ? <Text style={[ms.mazeMark, { color: good ? color.right : color.wrong }]}>{good ? '✓' : '✗'}</Text> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        ))}
+      </View>
+      {note ? <Small style={{ color: color.ink }}>{note}</Small> : null}
+      {!locked && path.length > 1 ? (
+        <View style={{ flexDirection: 'row', gap: space.sm }}>
+          <Tile label="Back one step" size="md" onPress={() => setPath((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev))} />
+          <Tile label="Start again" size="md" onPress={() => setPath([start])} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** A small, read-only maze with a path drawn on it: for worked examples, not for playing. */
+export function MazePreview({ payload, path }: { payload: import('../content/types').MazePayload; path: number[] }) {
+  const { rows, cols, cells } = payload;
+  const on = new Set(path);
+  const longest = Math.max(...cells.map((c) => c.length));
+  return (
+    <View accessible accessibilityRole="image" accessibilityLabel={`A solved maze. The path steps on ${path.map((c) => fmt(cells[c])).join(', ')}.`} style={{ gap: 3, alignSelf: 'flex-start' }}>
+      {Array.from({ length: rows }, (_, r) => (
+        <View key={r} style={{ flexDirection: 'row', gap: 3 }}>
+          {Array.from({ length: cols }, (_, k) => {
+            const c = r * cols + k;
+            return (
+              <View key={c} style={[ms.previewCell, on.has(c) && ms.mazeOn]}>
+                <Text style={[ms.mazeNum, { fontSize: longest > 3 ? 10 : 12, color: on.has(c) ? color.white : color.inkSoft }]}>{cells[c]}</Text>
+              </View>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+// ================================================================ match (Match Up)
+
+const PAIR_LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+/**
+ * Match Up: tap a card on the left, then the card on the right that goes with
+ * it. Each pair shows the same letter on both cards, so pairs never rely on
+ * colour. Tap a paired left card to change its partner.
+ */
+export function MatchBoard({ payload, locked, result, onChange, initialDraft, onDraft }: BoardProps<import('../content/types').MatchPayload>) {
+  const nL = payload.left.length;
+  const nR = payload.right.length;
+  const [state, setState] = useState<{ pairs: (number | null)[]; sel: number | null }>(() => {
+    const saved =
+      initialDraft?.kind === 'match' &&
+      initialDraft.pairs.length === nL &&
+      initialDraft.pairs.every((x) => x === null || (Number.isInteger(x) && x >= 0 && x < nR)) &&
+      // One partner per card: a saved draft that pairs a card twice is ignored.
+      new Set(initialDraft.pairs.filter((x) => x !== null)).size === initialDraft.pairs.filter((x) => x !== null).length
+        ? initialDraft.pairs
+        : null;
+    const pairs = saved ?? Array(nL).fill(null);
+    const first = pairs.findIndex((x) => x === null);
+    return { pairs, sel: first >= 0 ? first : null };
+  });
+  const { pairs, sel } = state;
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    onDraft?.({ kind: 'match', pairs });
+    onChange(pairs.every((x) => x !== null) ? { kind: 'match', pairs: pairs as number[] } : null);
+  }, [pairs]);
+
+  const pickLeft = (i: number) => {
+    if (locked) return;
+    setNote(null);
+    // Tapping the card that's already chosen keeps it chosen: "tap left, then right" always works.
+    setState((prev) => ({ ...prev, sel: i }));
+  };
+  const pickRight = (j: number) => {
+    if (locked) return;
+    if (sel === null) {
+      setNote('Tap a card on the left first.');
+      return;
+    }
+    setNote(null);
+    setState((prev) => {
+      if (prev.sel === null) return prev;
+      // One partner each: a card taken from another pair leaves that pair open.
+      const next = prev.pairs.map((x) => (x === j ? null : x));
+      next[prev.sel] = j;
+      const after = next.findIndex((x, i) => x === null && i > (prev.sel as number));
+      const any = next.findIndex((x) => x === null);
+      return { pairs: next, sel: after >= 0 ? after : any >= 0 ? any : null };
+    });
+  };
+
+  const judged = locked && !!result?.marks;
+  const leftOf = (j: number) => pairs.indexOf(j);
+
+  return (
+    <View style={{ gap: space.sm }}>
+      <View style={ms.matchCols}>
+        <View style={ms.matchCol}>
+          <Text style={ms.matchHead}>{payload.leftTitle}</Text>
+          {payload.left.map((l, i) => {
+            const on = sel === i && !locked;
+            const mark = judged ? result!.marks![i] : undefined;
+            return (
+              <Pressable
+                key={i}
+                accessibilityRole="button"
+                accessibilityLabel={`${l.label}${pairs[i] !== null ? `, paired with ${payload.right[pairs[i] as number]?.label}` : ', not paired yet'}${mark === true ? ', right' : mark === false ? ', wrong' : ''}`}
+                accessibilityState={{ selected: on, disabled: locked }}
+                onPress={() => pickLeft(i)}
+                disabled={locked}
+                style={({ pressed }) => [ms.matchCard, on && ms.matchCardOn, mark === true && ms.matchRight, mark === false && ms.matchWrong, pressed && !locked && { opacity: 0.85 }]}
+              >
+                <View style={[ms.matchBadge, on && { backgroundColor: color.white, borderColor: color.white }]}>
+                  <Text style={[ms.matchBadgeText, on && { color: color.action }]}>{PAIR_LETTERS[i]}</Text>
+                </View>
+                <Text style={[ms.matchLabel, on && { color: color.white }]} numberOfLines={1}>
+                  {l.label}
+                </Text>
+                {mark !== undefined ? <Text style={[ms.mazeMark, { position: 'relative', color: mark ? color.right : color.wrong }]}>{mark ? '✓' : '✗'}</Text> : null}
+              </Pressable>
+            );
+          })}
+        </View>
+        <View style={ms.matchCol}>
+          <Text style={ms.matchHead}>{payload.rightTitle}</Text>
+          {payload.right.map((r, j) => {
+            const k = leftOf(j);
+            const ready = !locked && sel !== null;
+            return (
+              <Pressable
+                key={j}
+                accessibilityRole="button"
+                accessibilityLabel={`${r.label}${k >= 0 ? `, paired with ${payload.left[k].label}` : ''}${ready ? `. Pair with ${payload.left[sel as number].label}` : ''}`}
+                accessibilityState={{ disabled: locked }}
+                onPress={() => pickRight(j)}
+                disabled={locked}
+                style={({ pressed }) => [ms.matchCard, ready && k < 0 && ms.matchReady, k >= 0 && !judged && ms.matchPaired, pressed && !locked && { opacity: 0.85 }]}
+              >
+                <View style={[ms.matchBadge, k < 0 && { borderStyle: 'dashed' }]}>
+                  <Text style={ms.matchBadgeText}>{k >= 0 ? PAIR_LETTERS[k] : ' '}</Text>
+                </View>
+                <Text style={ms.matchLabel} numberOfLines={1}>
+                  {r.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+      {note ? <Small style={{ color: color.ink }}>{note}</Small> : !locked ? <Small>{sel !== null ? `Now tap the partner for ${payload.left[sel].label}.` : 'All paired. Check your matches, or tap a card on the left to change it.'}</Small> : null}
+    </View>
+  );
+}
+
+const ms = StyleSheet.create({
+  mazeLegend: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
+  mazeCell: {
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: color.rule,
+    backgroundColor: color.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mazeNext: { borderColor: color.action, borderStyle: 'dashed', backgroundColor: color.actionWash },
+  mazeOn: { backgroundColor: color.action, borderColor: color.action },
+  mazeLast: { borderColor: color.actionDeep, borderWidth: 3 },
+  mazeRight: { backgroundColor: color.rightWash, borderColor: color.right },
+  mazeWrong: { backgroundColor: color.wrongWash, borderColor: color.wrong },
+  mazeNum: { fontFamily: font.num, fontVariant: ['tabular-nums'] },
+  mazeFlag: { position: 'absolute', top: 2, fontFamily: font.label, fontSize: 10, letterSpacing: 0.2 },
+  mazeStep: { position: 'absolute', bottom: 2, right: 4, fontFamily: font.label, fontSize: 10 },
+  mazeMark: { position: 'absolute', top: 1, right: 4, fontFamily: font.heading, fontSize: 12 },
+  previewCell: { width: 38, height: 30, borderRadius: 6, borderWidth: 1, borderColor: color.rule, backgroundColor: color.surface, alignItems: 'center', justifyContent: 'center' },
+  matchCols: { flexDirection: 'row', gap: space.md },
+  matchCol: { flex: 1, gap: space.sm },
+  matchHead: { fontFamily: font.label, fontSize: 13, color: color.inkSoft, minHeight: 18 },
+  matchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: 52,
+    paddingHorizontal: space.sm,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: color.rule,
+    borderBottomWidth: 3,
+    borderBottomColor: depth.key,
+    backgroundColor: color.surface,
+  },
+  matchCardOn: { backgroundColor: color.action, borderColor: color.action, borderBottomColor: color.actionDeep },
+  matchReady: { borderColor: color.action, borderStyle: 'dashed', backgroundColor: color.actionWash },
+  matchPaired: { borderColor: color.ruleStrong, backgroundColor: color.paper },
+  matchRight: { backgroundColor: color.rightWash, borderColor: color.right, borderBottomColor: color.right },
+  matchWrong: { backgroundColor: color.wrongWash, borderColor: color.wrong, borderBottomColor: color.wrong },
+  matchBadge: { width: 24, height: 24, borderRadius: 6, borderWidth: 1.5, borderColor: color.ruleStrong, alignItems: 'center', justifyContent: 'center' },
+  matchBadgeText: { fontFamily: font.label, fontSize: 12, color: color.inkSoft },
+  matchLabel: { flex: 1, fontFamily: font.num, fontSize: 20, color: color.ink, fontVariant: ['tabular-nums'] },
+});

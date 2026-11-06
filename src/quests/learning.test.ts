@@ -35,7 +35,8 @@ describe('tokens and the weekly goal', () => {
     expect(tokenBalance(d.tokenLedger as TokenEntry[])).toBe(50);
     expect(d.tokens).toBe(50);
     expect((d.quests as Quests)['gate-1'].completedAt).toBe(5);
-    expect(d.settings).toEqual({ previewAds: false, sound: false, haptics: true, reduceMotion: false });
+    // Settings added since (what follows an answer) start at their defaults.
+    expect(d.settings).toEqual({ previewAds: false, explain: 'all', sound: false, haptics: true, reduceMotion: false });
     // A v3 server snapshot loses its objects and object purchases the same way.
     const snap = migrateSnapshot({ v: 3, ...v3 } as unknown as Record<string, unknown>)!;
     expect(snap).not.toHaveProperty('grants');

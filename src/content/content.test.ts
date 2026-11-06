@@ -6,7 +6,7 @@
  * Run: npm run content:audit   (SEEDS=200 npm run content:audit for a deeper pass)
  */
 import { describe, expect, it } from 'vitest';
-import { optionIsCorrect } from './check';
+import { matchSolution, mazeNeighbours, mazePathBrute, optionIsCorrect } from './check';
 import { claimHolds, enumerateFills, evalPred, evalValue, isPrimeBrute } from './evaluate';
 import { FREE_MAX_LEVEL } from '../config';
 import { checkItem, generateItem, SKILLS, TEMPLATES, templatesForSkill } from './index';
@@ -106,6 +106,47 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('%s', (id, template) => 
             expect(right.length, `${where} exactly one stop is right`).toBe(1);
             expect(p.stops.length, where).toBe(p.loop);
             expect(p.stops.length, where).toBeGreaterThanOrEqual(2);
+            break;
+          }
+          case 'maze': {
+            const total = p.rows * p.cols;
+            expect(p.cells.length, where).toBe(total);
+            expect(p.cols, `${where} fits a phone`).toBeLessThanOrEqual(5);
+            expect(new Set(p.cells).size, `${where} duplicate numbers`).toBe(total);
+            const pass = p.cells.filter((c) => evalPred(BigInt(c), p.p)).length;
+            // There is something to avoid, and enough of it that the route isn't just "everything".
+            expect(pass, where).toBeLessThanOrEqual(Math.ceil(total * 0.75));
+            expect(total - pass, where).toBeGreaterThanOrEqual(4);
+            // A route exists (brute-force search), and it starts and ends where the board says.
+            const route = mazePathBrute(p);
+            expect(route, `${where} has no route`).not.toBeNull();
+            // Stepping straight from start to finish is refused unless they really are neighbours,
+            // and a path through a failing square is refused.
+            if (!mazeNeighbours(p, p.start, p.end)) expect(checkItem(item, { kind: 'maze', path: [p.start, p.end] }).correct, where).toBe(false);
+            const key = item.key.kind === 'maze' ? item.key.path : [];
+            const besideFail = key.flatMap((c) => [c - p.cols, c + p.cols, c % p.cols ? c - 1 : -1, (c + 1) % p.cols ? c + 1 : -1]).find((n) => n >= 0 && n < total && !key.includes(n) && !evalPred(BigInt(p.cells[n]), p.p));
+            expect(besideFail, `${where} nothing to avoid next to the route`).toBeDefined();
+            // Any valid path counts: the shortest one found by search is accepted too.
+            expect(checkItem(item, { kind: 'maze', path: route! }).correct, where).toBe(true);
+            // No shortcuts: the search's shortest route is the carved one (dead ends are leaves),
+            // and grids bigger than 4 × 4 need at least one detour.
+            expect(route!.length, `${where} a dead end made a shortcut`).toBe(key.length);
+            if (total > 16) expect(route!.length, `${where} no detour`).toBeGreaterThanOrEqual(p.rows + p.cols + 1);
+            break;
+          }
+          case 'match': {
+            const values = p.right.map((r) => r.value);
+            expect(new Set(values).size, `${where} right-hand values repeat`).toBe(values.length);
+            expect(p.right.length, `${where} needs one extra card`).toBe(p.left.length + 1);
+            expect(new Set(p.left.map((l) => l.label)).size, where).toBe(p.left.length);
+            // Every left card has exactly one partner, computed directly, and the extra card has none.
+            const sol = matchSolution(p);
+            expect(sol.every((j) => j >= 0), `${where} a card has no partner`).toBe(true);
+            expect(new Set(sol).size, where).toBe(p.left.length);
+            const extra = p.right.filter((_, j) => !sol.includes(j));
+            expect(extra.length, where).toBe(1);
+            expect(extra[0].misconception, `${where} the extra card needs a named slip`).toBeTruthy();
+            for (const l of p.left) expect(p.right.filter((r) => BigInt(r.value) === evalValue(l.spec)).length, where).toBe(1);
             break;
           }
         }

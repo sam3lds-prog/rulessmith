@@ -1,8 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { checkItem, generateItem, TEMPLATES, type Item, type Response } from '../content';
 import { evalPred } from '../content/evaluate';
-import type { NumPredicate, Payload } from '../content/types';
+import type { MatchPayload, MazePayload, NumPredicate, Payload } from '../content/types';
 import { coach, reason, relatedDigitSumExample, sentence } from './explain';
+
+/** Wrong-looking maze answers: along the edges (structurally valid), or a path that stops at the start. */
+function mazeTries(p: MazePayload): Response[] {
+  const { rows, cols } = p;
+  const top = [...Array.from({ length: cols }, (_, k) => k), ...Array.from({ length: rows - 1 }, (_, r) => (r + 1) * cols + cols - 1)];
+  const left = [...Array.from({ length: rows }, (_, r) => r * cols), ...Array.from({ length: cols - 1 }, (_, k) => (rows - 1) * cols + k + 1)];
+  return [{ kind: 'maze', path: top }, { kind: 'maze', path: left }, { kind: 'maze', path: [p.start] }];
+}
+
+/** Wrong match answers: every pair shifted by one card, or every card paired with the first. */
+function matchTries(p: MatchPayload): Response[] {
+  return [
+    { kind: 'match', pairs: p.left.map((_, i) => (i + 1) % p.right.length) },
+    { kind: 'match', pairs: p.left.map(() => 0) },
+  ];
+}
+
 
 function makeItem(payload: Payload, extra: Partial<Item> = {}): Item {
   return {
@@ -194,6 +211,58 @@ describe('coaching other boards', () => {
 
 });
 
+describe('coaching the new games', () => {
+  // 3 × 3 maze, multiples of 3. Route: 12 → 15 → 18 → 21 → 24 (top row, then down the right column).
+  const maze: MazePayload = { kind: 'maze', rows: 3, cols: 3, cells: ['12', '15', '18', '20', '22', '21', '25', '26', '24'], p: { op: 'div', d: 3 }, start: 0, end: 8, label: 'multiples of 3' };
+
+  it('Number Maze names the square that broke the path, with the reason, and shows a path that works', () => {
+    const item = makeItem(maze);
+    const r: Response = { kind: 'maze', path: [0, 3, 6, 7, 8] };
+    expect(checkItem(item, r).correct).toBe(false);
+    const c = run(item, r);
+    expect(c.specific).toBe(true);
+    expect(c.lines[0]).toBe("You stepped on 20. 20 isn't divisible by 3: its digits add to 2 + 0 = 2, and 2 isn't a multiple of 3.");
+    expect(c.lines.join(' ')).toContain('One path that works: 12 → 15 → 18 → 21 → 24.');
+    expect(c.lines.join(' ')).not.toMatch(/undefined|NaN/);
+  });
+
+  it('Match Up explains a quotient picked as the remainder, with the division written out', () => {
+    const item = makeItem({
+      kind: 'match',
+      left: [
+        { label: '47', spec: { op: 'remainder', n: '47', d: 7 } },
+        { label: '30', spec: { op: 'remainder', n: '30', d: 7 } },
+      ],
+      right: [
+        { label: '5', value: 5 },
+        { label: '2', value: 2 },
+        { label: '6', value: 6, misconception: 'quotient-for-remainder' },
+      ],
+      leftTitle: 'Number',
+      rightTitle: 'Remainder',
+    });
+    const c = run(item, { kind: 'match', pairs: [2, 1] });
+    expect(c.specific).toBe(true);
+    expect(c.submitted).toBe("1 of 2 pairs wasn't right.");
+    expect(c.lines[0]).toBe('You matched 47 with 6. 47 = 7 × 6 + 5, so its remainder is 5. 6 is the quotient, not the remainder.');
+  });
+
+  it('Match Up explains a units digit from its cycle', () => {
+    const item = makeItem({
+      kind: 'match',
+      left: [{ label: '7¹⁰', spec: { op: 'powMod', base: 7, exp: 10, d: 10 } }],
+      right: [
+        { label: '9', value: 9 },
+        { label: '3', value: 3, misconception: 'cycle-off-by-one' },
+      ],
+      leftTitle: 'Power',
+      rightTitle: 'Units digit',
+    });
+    const c = run(item, { kind: 'match', pairs: [1] });
+    expect(c.lines[0]).toBe("You matched 7¹⁰ with 3. Units digits of powers of 7 go 7, 9, 3, 1, then repeat. 10 = 4 × 2 + 2, so it's the 2nd digit in the cycle: 9.");
+  });
+});
+
 describe('every family has accurate coaching or a safe fallback', () => {
   function wrongResponse(item: Item): Response | undefined {
     const p = item.payload;
@@ -210,6 +279,10 @@ describe('every family has accurate coaching or a safe fallback', () => {
                 ? [{ kind: 'factor', primes: [p.n] }]
                 : p.kind === 'rail'
                   ? p.stops.map((_, i) => ({ kind: 'rail' as const, stop: i }))
+                : p.kind === 'maze'
+                  ? mazeTries(p)
+                : p.kind === 'match'
+                  ? matchTries(p)
                   : p.mode === 'all'
                     ? [{ kind: 'constructAll', digits: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] }, { kind: 'constructAll', digits: [0] }]
                     : Array.from({ length: 10 }, (_, d) => ({ kind: 'construct' as const, digits: p.fixed.filter((x) => x === null).map(() => d) }));
@@ -233,8 +306,8 @@ describe('every family has accurate coaching or a safe fallback', () => {
           if (!c.specific) expect(c.lines.at(-1), item.id).toBe(item.explanation);
           total++;
           if (c.specific) specific++;
-          // Sort, construct and refute always get a response-specific explanation.
-          if (['sort', 'construct', 'refute', 'factor'].includes(item.payload.kind)) expect(c.specific, item.id).toBe(true);
+          // Sort, construct, refute, factor, maze and match always get a response-specific explanation.
+          if (['sort', 'construct', 'refute', 'factor', 'maze', 'match'].includes(item.payload.kind)) expect(c.specific, item.id).toBe(true);
         }
       }
     }

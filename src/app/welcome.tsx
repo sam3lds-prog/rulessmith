@@ -10,6 +10,7 @@ import { gameForItem } from '../games/registry';
 import { useApp } from '../state/store';
 import { Body, Button, Gap, Heading, Screen, Small } from '../ui/kit';
 import { color, font, space } from '../ui/theme';
+import { ExamMarks } from '../ui/ExamMarks';
 
 type Stage = 'intro' | 'puzzle' | 'after';
 
@@ -94,6 +95,7 @@ export default function Welcome() {
       <Body>Learn a rule from a short example, use it in puzzles that get harder, and check what you can do with the rule hidden. It starts with number properties: the divisibility, prime and remainder rules GMAT and GRE quant lean on. More topics are planned.</Body>
       <Gap h={space.sm} />
       <Small>Try one puzzle first. No sign-up; it takes about a minute.</Small>
+      <ExamMarks style={{ marginTop: space.xl }} />
     </Screen>
   );
 }

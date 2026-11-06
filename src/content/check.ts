@@ -12,8 +12,8 @@ import {
   isPrimeBrute,
   parseWhole,
 } from './evaluate';
-import type { CheckResult, ChoiceOption, ChoicePayload, Item, Response } from './types';
-import { formatTuple } from './format';
+import type { CheckResult, ChoiceOption, ChoicePayload, Item, MatchPayload, MazePayload, Response } from './types';
+import { fmt, formatTuple } from './format';
 
 export function optionIsCorrect(payload: ChoicePayload, option: ChoiceOption): boolean {
   const q = payload.question;
@@ -93,7 +93,85 @@ export function checkItem(item: Item, response: Response): CheckResult {
       const stop = p.stops[response.stop];
       return { correct: stop !== undefined && BigInt(stop.value) === evalValue(p.spec) };
     }
+    case 'maze': {
+      if (response.kind !== 'maze') return { correct: false };
+      const path = response.path;
+      const marks = path.map((c) => inGrid(p, c) && evalPred(BigInt(p.cells[c]), p.p));
+      const walk =
+        path.length > 0 &&
+        path[0] === p.start &&
+        path[path.length - 1] === p.end &&
+        new Set(path).size === path.length &&
+        path.every((c, i) => inGrid(p, c) && (i === 0 || mazeNeighbours(p, path[i - 1], c)));
+      return {
+        correct: walk && marks.every(Boolean),
+        marks,
+        feedback: walk ? undefined : 'A path has to run from the start square to the finish, one neighbouring square at a time.',
+      };
+    }
+    case 'match': {
+      if (response.kind !== 'match' || response.pairs.length !== p.left.length) return { correct: false };
+      const marks = p.left.map((l, i) => {
+        const r = p.right[response.pairs[i]];
+        return r !== undefined && BigInt(r.value) === evalValue(l.spec);
+      });
+      // Each right-hand card partners one left card at most.
+      const distinct = new Set(response.pairs).size === response.pairs.length;
+      // The named slip of the first wrong card chosen, if it has one (the extra card does).
+      const slip = p.left.map((_, i) => (marks[i] ? undefined : p.right[response.pairs[i]]?.misconception)).find(Boolean);
+      const correct = marks.every(Boolean) && distinct;
+      return { correct, marks, misconception: correct ? undefined : slip };
+    }
   }
+}
+
+const inGrid = (p: MazePayload, c: number) => Number.isInteger(c) && c >= 0 && c < p.rows * p.cols && c < p.cells.length;
+
+/** True when two squares share a side (up, down, left or right). */
+export function mazeNeighbours(p: Pick<MazePayload, 'cols'>, a: number, b: number): boolean {
+  const ra = Math.floor(a / p.cols);
+  const rb = Math.floor(b / p.cols);
+  const ca = a % p.cols;
+  const cb = b % p.cols;
+  return (ra === rb && Math.abs(ca - cb) === 1) || (ca === cb && Math.abs(ra - rb) === 1);
+}
+
+/**
+ * A shortest valid path through the maze, found by breadth-first search over
+ * the squares whose numbers pass the condition (tested by brute force), or
+ * null if there is none.
+ */
+export function mazePathBrute(p: MazePayload): number[] | null {
+  const ok = (c: number) => evalPred(BigInt(p.cells[c]), p.p);
+  if (!ok(p.start) || !ok(p.end)) return null;
+  const prev = new Map<number, number>([[p.start, -1]]);
+  const queue = [p.start];
+  while (queue.length) {
+    const c = queue.shift() as number;
+    if (c === p.end) {
+      const path = [c];
+      while (prev.get(path[0]) !== -1) path.unshift(prev.get(path[0]) as number);
+      return path;
+    }
+    const r = Math.floor(c / p.cols);
+    const k = c % p.cols;
+    const next = [r > 0 ? c - p.cols : -1, r < p.rows - 1 ? c + p.cols : -1, k > 0 ? c - 1 : -1, k < p.cols - 1 ? c + 1 : -1];
+    for (const n of next) {
+      if (n >= 0 && !prev.has(n) && ok(n)) {
+        prev.set(n, c);
+        queue.push(n);
+      }
+    }
+  }
+  return null;
+}
+
+/** For each left card, the right card whose value it has (computed directly), or -1. */
+export function matchSolution(p: MatchPayload): number[] {
+  return p.left.map((l) => {
+    const v = evalValue(l.spec);
+    return p.right.findIndex((r) => BigInt(r.value) === v);
+  });
 }
 
 /** Prime factors of n with repetition, smallest first, by trial division. */
@@ -136,6 +214,14 @@ export function correctAnswerText(item: Item): string {
     case 'rail': {
       const v = evalValue(p.spec);
       return p.stops.find((s) => BigInt(s.value) === v)?.label ?? v.toString();
+    }
+    case 'maze': {
+      const path = mazePathBrute(p);
+      return path ? path.map((c) => fmt(p.cells[c])).join(' → ') : '';
+    }
+    case 'match': {
+      const sol = matchSolution(p);
+      return p.left.map((l, i) => `${l.label} → ${p.right[sol[i]]?.label ?? evalValue(l.spec).toString()}`).join(', ');
     }
   }
 }

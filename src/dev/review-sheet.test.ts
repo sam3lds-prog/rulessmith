@@ -30,6 +30,16 @@ function board(item: Item): string[] {
       return [`Split ${fmt(p.n)} into factor pairs until every piece is prime`];
     case 'rail':
       return [`Walk: ${p.walk} round a loop of ${p.loop}`, `Stops: ${p.stops.map((st) => st.label).join(' | ')}`];
+    case 'maze':
+      return [
+        `Maze, ${p.rows} × ${p.cols}, step only on ${p.label} (from the top-left to the bottom-right):`,
+        ...Array.from({ length: p.rows }, (_, r) => '`' + p.cells.slice(r * p.cols, r * p.cols + p.cols).map((c) => fmt(c).padStart(5)).join(' ') + '`'),
+      ];
+    case 'match':
+      return [
+        `${p.leftTitle}: ${p.left.map((l) => l.label).join(' | ')}`,
+        `${p.rightTitle}: ${p.right.map((r) => `${r.label}${r.misconception ? ` (extra card, misconception: \`${r.misconception}\`)` : ''}`).join(' | ')}`,
+      ];
   }
 }
 

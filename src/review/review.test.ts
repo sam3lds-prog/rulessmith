@@ -103,11 +103,20 @@ describe('games for a topic', () => {
     expect(capped.every((s) => s.level <= 3)).toBe(true);
   });
 
-  it('the divisibility path has Pattern Sort, Missing Digit and Rule Detective', () => {
-    expect(gamesForSkill('div.digit-sum')).toEqual(['gates', 'forge', 'breaker']);
+  it('the divisibility path has Pattern Sort, Number Maze, Missing Digit and Rule Detective', () => {
+    expect(gamesForSkill('div.digit-sum')).toEqual(['gates', 'maze', 'forge', 'breaker']);
     expect(GAMES.gates.name).toBe('Pattern Sort');
+    expect(GAMES.maze.name).toBe('Number Maze');
     expect(GAMES.forge.name).toBe('Missing Digit');
     expect(GAMES.breaker.name).toBe('Rule Detective');
+  });
+
+  it('Number Maze and Match Up appear only where a topic has them', () => {
+    expect(gamesForSkill('pf.primes')).toContain('maze');
+    expect(gamesForSkill('rem.basics')).toEqual(['rails', 'match']);
+    expect(gamesForSkill('rem.cycles')).toEqual(['rails', 'match']);
+    expect(gamesForSkill('div.last-digit')).not.toContain('maze');
+    expect(gamesForSkill('div.last-digit')).not.toContain('match');
   });
 
   it('a switched-off family is never offered, and an empty game is not offered at all', () => {

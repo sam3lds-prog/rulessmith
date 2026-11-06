@@ -10,17 +10,28 @@ import { isPremium } from '../monetization/entitlements';
 import { PRODUCT_BY_ID } from '../monetization/products';
 import { policyFor } from '../policy/age';
 import { useApp } from '../state/store';
-import type { FeelSettings } from '../state/types';
+import type { ExplainMode, FeelSettings } from '../state/types';
 import { TOKEN_COSTS, TOKEN_REWARDS } from '../monetization/tokens';
 import { WEEKLY_REWARD } from '../rewards/ledger';
-import { BackLink, Body, Button, Gap, Heading, LinkRow, Plate, Row, Screen, Small, Title } from '../ui/kit';
+import { BackLink, Body, Button, Gap, Heading, LinkRow, OptionRow, Plate, Row, Screen, Small, Title } from '../ui/kit';
 import { color, space } from '../ui/theme';
+import { ExamMarks } from '../ui/ExamMarks';
 import { useNow } from '../ui/useNow';
 
 const FEEL_ROWS: { key: keyof FeelSettings; title: string; detail: string }[] = [
   { key: 'sound', title: 'Sounds', detail: 'Soft taps and chimes. Off when your phone is on silent.' },
   { key: 'haptics', title: 'Vibration', detail: 'A light tap when you place a tile or get it right.' },
   { key: 'reduceMotion', title: 'Reduce motion', detail: 'No animated transitions. Also follows your device setting.' },
+];
+
+const EXPLAIN_ROWS: { mode: ExplainMode; title: string; detail: string }[] = [
+  { mode: 'all', title: 'Explain every answer', detail: "See why after each answer, right or wrong. Tap Next when you're ready." },
+  { mode: 'mistakes', title: 'Explain my mistakes only', detail: 'Right answers move on by themselves. Wrong answers get the full explanation.' },
+  {
+    mode: 'skip',
+    title: 'Skip explanations',
+    detail: 'Right answers move on by themselves. Wrong answers show the correct answer, then move on after a few seconds. The explanation is one tap away.',
+  },
 ];
 
 export default function You() {
@@ -88,6 +99,18 @@ export default function You() {
       <Heading>Tokens</Heading>
       <Small style={{ marginTop: space.xs }}>
         You have {Math.max(0, s.tokens)}. Earn {TOKEN_REWARDS.sessionComplete} for each finished session, {TOKEN_REWARDS.dailyPuzzle} for each daily puzzle and {WEEKLY_REWARD} for a weekly goal. {TOKEN_COSTS.bonusRun} tokens buy one more session on a day you've used the free ones. Tokens are never sold, and hints and explanations are always free.
+      </Small>
+
+      <Gap h={space.xl} />
+      <Heading>After each answer</Heading>
+      <Small style={{ marginTop: space.xs }}>For practice and games. Concept checks always save explanations for the end.</Small>
+      <View style={{ gap: space.sm, marginTop: space.sm }} accessibilityRole="radiogroup" accessibilityLabel="After each answer">
+        {EXPLAIN_ROWS.map((r) => (
+          <OptionRow key={r.mode} label={r.title} detail={r.detail} selected={s.settings.explain === r.mode} onPress={() => s.setExplain(r.mode)} />
+        ))}
+      </View>
+      <Small style={{ marginTop: space.sm }}>
+        Every explanation is still in your recap and in Review my mistakes. On a phone or tablet with a screen reader on, nothing moves on by itself.
       </Small>
 
       <Gap h={space.xl} />
@@ -166,6 +189,7 @@ export default function You() {
 
       <Gap h={space.xl} />
       <Small>Content {CONTENT_VERSION}</Small>
+      <ExamMarks style={{ marginTop: space.sm }} />
     </Screen>
   );
 }

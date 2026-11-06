@@ -12,7 +12,7 @@ import { freshSeed, supportFor, type PickOptions } from '../engine/mixer';
 import { levelForBand } from '../engine/rating';
 import type { SkillState, Slot } from '../engine/types';
 
-export type GameId = 'gates' | 'forge' | 'breaker' | 'factory' | 'rails';
+export type GameId = 'gates' | 'forge' | 'breaker' | 'factory' | 'rails' | 'maze' | 'match';
 
 export interface Game {
   id: GameId;
@@ -73,11 +73,29 @@ export const GAMES: Record<GameId, Game> = {
     submitLabel: 'Check my stop',
     guidedNote: 'Practice with the rule on screen. Group the complete loops first.',
   },
+  maze: {
+    id: 'maze',
+    name: 'Number Maze',
+    tagline: 'Find a path that steps only on numbers that fit the rule.',
+    board: 'maze',
+    teaches: 'Test every neighbour before you step. Near misses are dead ends.',
+    submitLabel: 'Check my path',
+    guidedNote: 'Practice with the rule on screen. Tap a square on your path to back up to it.',
+  },
+  match: {
+    id: 'match',
+    name: 'Match Up',
+    tagline: 'Pair each number with its remainder or units digit.',
+    board: 'match',
+    teaches: 'Several quick calculations in a row. One extra card is a common slip.',
+    submitLabel: 'Check my pairs',
+    guidedNote: 'Practice with the rule on screen. Tap a card on the left, then its partner.',
+  },
 };
 
-export const GAME_ORDER: GameId[] = ['gates', 'forge', 'breaker', 'factory', 'rails'];
+export const GAME_ORDER: GameId[] = ['gates', 'maze', 'forge', 'breaker', 'factory', 'rails', 'match'];
 
-const BY_BOARD: Partial<Record<BoardKind, GameId>> = { sort: 'gates', construct: 'forge', refute: 'breaker', factor: 'factory', rail: 'rails' };
+const BY_BOARD: Partial<Record<BoardKind, GameId>> = { sort: 'gates', construct: 'forge', refute: 'breaker', factor: 'factory', rail: 'rails', maze: 'maze', match: 'match' };
 
 /** The game an item is played in, or null for plain question formats (choice, numeric). */
 export const gameForBoard = (board: BoardKind): GameId | null => BY_BOARD[board] ?? null;

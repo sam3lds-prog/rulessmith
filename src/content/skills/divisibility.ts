@@ -14,6 +14,7 @@ import {
   div,
   makeChoice,
   makeConstruct,
+  makeMaze,
   makeNumeric,
   makeRefute,
   makeSort,
@@ -306,6 +307,40 @@ const digitSumRefute: Template = {
       varNames: ['n'],
       lens: DS_LENS,
       hints: ['Try small multiples first: 3, 6, 9, 12…', 'One number that meets the "if" part but not the "then" part breaks the claim.'],
+    }),
+};
+
+/**
+ * Number Maze for digit sums: walk corner to corner on multiples of 3 (or 9).
+ * From level 3 the squares beside the route are near misses: numbers ending
+ * in 3, 6 or 9 that aren't multiples of 3, or multiples of 3 that aren't
+ * multiples of 9.
+ */
+const digitSumMaze: Template = {
+  id: 'div.digit-sum/maze',
+  skillId: 'div.digit-sum',
+  board: 'maze',
+  version: 1,
+  generate: ({ rng, level }) =>
+    retry(() => {
+      const d = level <= 3 ? 3 : rng.chance(0.5) ? 9 : 3;
+      const len = () => (level <= 2 ? 2 : level <= 4 ? (d === 9 ? 3 : rng.int(2, 3)) : level <= 7 ? 3 : rng.int(3, 4));
+      const looksRight = d === 9 ? (s: string) => ruleDiv(s, 3) : (s: string) => [3, 6, 9].includes(last(s));
+      return makeMaze({
+        rng,
+        level,
+        p: div(d),
+        label: `multiples of ${d}`,
+        lens: DS_LENS,
+        hints: [
+          'Before each step, add the digits of the squares next to you.',
+          d === 9 ? 'Only digit sums of 9, 18 or 27 work. A digit sum of 12 is a multiple of 3, not of 9.' : 'Digit sums of 3, 6, 9, 12, 15 or 18 work. Any other sum is a dead end.',
+        ],
+        pass: (r) => sampleWhere(r, len(), (s) => ruleDiv(s, d)),
+        fail: (r, near) => sampleWhere(r, len(), (s) => !ruleDiv(s, d) && (!near || looksRight(s))),
+        why: (s) => `digits add to ${digitSum(s)}`,
+        trap: (s) => (looksRight(s) ? `${fmt(s)} (digits add to ${digitSum(s)})` : null),
+      });
     }),
 };
 
@@ -988,6 +1023,7 @@ export const DIVISIBILITY_TEMPLATES: Template[] = [
   digitSumConstruct,
   digitSumCount,
   digitSumRefute,
+  digitSumMaze,
   lastTwoSort,
   lastTwoConstruct,
   lastTwoRefute,

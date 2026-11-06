@@ -8,6 +8,7 @@ import { policyFor } from '../../policy/age';
 import { useApp } from '../../state/store';
 import { Body, Button, Chip, Gap, Micro, OptionRow, Row, Screen, Small, Title } from '../../ui/kit';
 import { color, font, radius, space } from '../../ui/theme';
+import { ExamMarks } from '../../ui/ExamMarks';
 
 const ROLES: { id: Role; label: string }[] = [
   { id: 'grad-applicant', label: 'Applying to grad school' },
@@ -164,6 +165,7 @@ export default function About() {
                 }}
               />
             </View>
+            <ExamMarks style={{ marginTop: space.md }} />
           </>) })
         );
       case 'date':

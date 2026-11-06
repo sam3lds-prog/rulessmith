@@ -298,6 +298,205 @@ export function makeRefute(args: {
   };
 }
 
+// ---------------------------------------------------------------- maze (Number Maze)
+
+export interface MazeSpec {
+  rng: Rng;
+  level: number;
+  p: NumPredicate;
+  /** The condition in the learner's words: "multiples of 3". */
+  label: string;
+  lens: string;
+  hints: string[];
+  /** A number (as a string) that meets p. */
+  pass: (rng: Rng) => string;
+  /** A number that fails p. `near` asks for one that looks as if it might pass. */
+  fail: (rng: Rng, near: boolean) => string;
+  /** Short reason a number on the path passes, e.g. "digits add to 12". */
+  why?: (s: string) => string;
+  /** A note on a near miss beside the path, e.g. "91 = 7 × 13", or null if it isn't one. */
+  trap?: (s: string) => string | null;
+}
+
+/** Grid size by level. Never more than five columns, so a 320 px phone fits it. */
+export function mazeSize(level: number): { rows: number; cols: number } {
+  if (level <= 3) return { rows: 4, cols: 4 };
+  if (level <= 6) return { rows: 5, cols: 4 };
+  return { rows: 5, cols: 5 };
+}
+
+function gridNeighbours(c: number, rows: number, cols: number): number[] {
+  const r = Math.floor(c / cols);
+  const k = c % cols;
+  return [r > 0 ? c - cols : -1, r < rows - 1 ? c + cols : -1, k > 0 ? c - 1 : -1, k < cols - 1 ? c + 1 : -1].filter((x) => x >= 0);
+}
+
+/**
+ * A random path from the top-left square to the bottom-right one that never
+ * touches itself (no square on it is beside an earlier one except the square
+ * before), so the path's own squares give exactly one route.
+ */
+function carvePath(rng: Rng, rows: number, cols: number, minLen: number, maxLen: number): number[] | null {
+  const end = rows * cols - 1;
+  const dist = (c: number) => rows - 1 - Math.floor(c / cols) + (cols - 1 - (c % cols));
+  const path = [0];
+  const seen = new Set([0]);
+  let budget = 5000;
+  const go = (c: number): boolean => {
+    if (--budget < 0) return false;
+    if (c === end) return path.length >= minLen;
+    if (path.length + dist(c) > maxLen) return false;
+    for (const n of rng.shuffle(gridNeighbours(c, rows, cols))) {
+      if (seen.has(n) || gridNeighbours(n, rows, cols).some((m) => m !== c && seen.has(m))) continue;
+      seen.add(n);
+      path.push(n);
+      if (go(n)) return true;
+      path.pop();
+      seen.delete(n);
+    }
+    return false;
+  };
+  return go(0) ? path : null;
+}
+
+/** Squares on the shortest route (rule-based, for the generator; the checker has its own search), or 0 if none. */
+function shortestRoute(pass: boolean[], rows: number, cols: number): number {
+  const end = rows * cols - 1;
+  if (!pass[0] || !pass[end]) return 0;
+  const dist = new Map([[0, 1]]);
+  const queue = [0];
+  while (queue.length) {
+    const c = queue.shift() as number;
+    if (c === end) return dist.get(c) as number;
+    for (const n of gridNeighbours(c, rows, cols)) {
+      if (!dist.has(n) && pass[n]) {
+        dist.set(n, (dist.get(c) as number) + 1);
+        queue.push(n);
+      }
+    }
+  }
+  return 0;
+}
+
+/**
+ * Number Maze. Carves a route, puts passing numbers on it, a dead end or two
+ * of passing numbers beside it from level 4, and failing numbers everywhere
+ * else (near misses from level 3, mostly on the squares next to the route,
+ * where they tempt). Returns null when the numbers run out; wrap it in retry().
+ */
+export function makeMaze(spec: MazeSpec): ItemDraft | null {
+  const { rng, level, p } = spec;
+  const { rows, cols } = mazeSize(level);
+  const total = rows * cols;
+  const shortest = rows + cols - 1;
+  // 4 × 4 grids only fit shortest routes; bigger grids need at least one detour.
+  const route = carvePath(rng, rows, cols, shortest + (rows * cols > 16 ? 2 : 0), shortest + 6);
+  if (!route) return null;
+  const onRoute = new Set(route);
+  const beside = new Set<number>();
+  for (const c of route) for (const n of gridNeighbours(c, rows, cols)) if (!onRoute.has(n)) beside.add(n);
+
+  // Dead ends touch exactly one route square and no other dead end, so they never join two
+  // parts of the route into a shortcut: the carved route stays the only way through.
+  const deadEnds = new Set<number>();
+  const want = level >= 7 ? 2 : level >= 4 ? 1 : 0;
+  for (const c of rng.shuffle([...beside])) {
+    if (deadEnds.size >= want) break;
+    const near = gridNeighbours(c, rows, cols);
+    if (near.filter((n) => onRoute.has(n)).length !== 1 || near.some((n) => deadEnds.has(n)) || c === total - 1) continue;
+    deadEnds.add(c);
+  }
+
+  const used = new Set<string>();
+  const draw = (make: () => string): string | null => {
+    for (let i = 0; i < 60; i++) {
+      let s: string;
+      try {
+        s = make();
+      } catch {
+        return null;
+      }
+      if (!used.has(s)) {
+        used.add(s);
+        return s;
+      }
+    }
+    return null;
+  };
+  const cells: string[] = [];
+  for (let c = 0; c < total; c++) {
+    let s: string | null;
+    if (onRoute.has(c) || deadEnds.has(c)) s = draw(() => spec.pass(rng));
+    else {
+      const near = level >= 3 && rng.chance(beside.has(c) ? 0.7 : 0.3);
+      s = (near ? draw(() => spec.fail(rng, true)) : null) ?? draw(() => spec.fail(rng, false));
+    }
+    if (s === null) return null;
+    cells.push(s);
+  }
+
+  // Every number is where it should be, and the route really goes through (rule-based).
+  const pass = cells.map((s) => ruleEval(s, p));
+  if (cells.some((_, c) => pass[c] !== (onRoute.has(c) || deadEnds.has(c)))) return null;
+  if (shortestRoute(pass, rows, cols) !== route.length) return null;
+
+  const why = spec.why;
+  const shown = route.map((c) => (why ? `${fmt(cells[c])} (${why(cells[c])})` : fmt(cells[c])));
+  const traps = spec.trap ? [...beside].map((c) => (deadEnds.has(c) ? null : spec.trap!(cells[c]))).filter((t): t is string => !!t).slice(0, 2) : [];
+  return {
+    prompt: `Find a path from the top-left square to the bottom-right square, stepping only on ${spec.label}. Move up, down, left or right.`,
+    ruleLens: spec.lens,
+    hints: spec.hints,
+    explanation: `One path: ${shown.join(' → ')}.${traps.length ? ` Near misses beside it: ${traps.join('; ')}.` : ''} Any path that steps only on ${spec.label} counts.`,
+    payload: { kind: 'maze', rows, cols, cells, p, start: 0, end: total - 1, label: spec.label },
+    key: { kind: 'maze', path: route },
+  };
+}
+
+// ---------------------------------------------------------------- match (Match Up)
+
+export interface MatchCard {
+  label: string;
+  spec: ValueSpec;
+  /** What the generator believes the value is. The audit and the checker compute it independently. */
+  value: number;
+}
+
+/**
+ * Match Up: left cards, their values on the right, plus one extra card from a
+ * named slip. Values must be distinct; returns null if they aren't or no
+ * decoy fits.
+ */
+export function makeMatch(args: {
+  rng: Rng;
+  prompt: string;
+  lens?: string;
+  hints: string[];
+  left: MatchCard[];
+  /** Candidate extra cards, best first; the first value not already on the right is used. */
+  decoys: { value: number; misconception: string }[];
+  leftTitle: string;
+  rightTitle: string;
+  explain: (decoy: { value: number; misconception: string }) => string;
+  rightLabel?: (v: number) => string;
+}): ItemDraft | null {
+  const values = args.left.map((l) => l.value);
+  if (new Set(values).size !== values.length) return null;
+  if (new Set(args.left.map((l) => l.label)).size !== args.left.length) return null;
+  const decoy = args.decoys.find((d) => Number.isInteger(d.value) && d.value >= 0 && !values.includes(d.value));
+  if (!decoy) return null;
+  const label = args.rightLabel ?? ((v: number) => String(v));
+  const right = args.rng.shuffle([...values.map((v) => ({ label: label(v), value: v })), { label: label(decoy.value), value: decoy.value, misconception: decoy.misconception }]);
+  return {
+    prompt: args.prompt,
+    ruleLens: args.lens,
+    hints: args.hints,
+    explanation: args.explain(decoy),
+    payload: { kind: 'match', left: args.left.map(({ label: l, spec }) => ({ label: l, spec })), right, leftTitle: args.leftTitle, rightTitle: args.rightTitle },
+    key: { kind: 'match', pairs: values.map((v) => right.findIndex((r) => r.value === v)) },
+  };
+}
+
 // ---------------------------------------------------------------- claim helpers
 
 export const A = { op: 'var', v: 'a' } as const;

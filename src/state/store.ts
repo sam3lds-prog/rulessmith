@@ -64,6 +64,7 @@ import {
   type AnswerRecord,
   type CheckRecord,
   type Data,
+  type ExplainMode,
   type FeelSettings,
   type ItemProgress,
   type Recap,
@@ -146,6 +147,7 @@ interface Actions {
   restorePurchases(): Promise<{ ok: boolean }>;
 
   setFeel(patch: Partial<FeelSettings>): void;
+  setExplain(mode: ExplainMode): void;
   /** Pay weekly-goal tokens already earned. Idempotent; runs at launch and after a sync. */
   settle(): void;
 
@@ -207,7 +209,7 @@ const timeout = (ms: number) => new Promise<void>((resolve) => setTimeout(resolv
 
 /** Help just taken (or a puzzle just opened) is saved at once rather than after the usual short delay. */
 const isUrgent = (prev: ItemProgress | undefined, next: ItemProgress) =>
-  !prev || prev.itemId !== next.itemId || next.hints > prev.hints || (next.ruleRevealed && !prev.ruleRevealed);
+  !prev || prev.itemId !== next.itemId || next.hints > prev.hints || (next.ruleRevealed && !prev.ruleRevealed) || (!!next.example && !prev.example);
 
 /** The bucket being saved to. Null until launch has opened one, so nothing is written before then. */
 let saverOwner: string | null = null;
@@ -1053,6 +1055,7 @@ export const useApp = create<AppState>()((set, get) => {
     },
 
     setFeel: (patch) => set({ settings: { ...get().settings, ...patch } }),
+    setExplain: (mode) => set({ settings: { ...get().settings, explain: mode } }),
 
     settle: () => {
       if (get().profile) settleTokens(Date.now());
