@@ -369,7 +369,7 @@ const basicsMatch: Template = {
           const why =
             decoy.misconception === 'quotient-for-remainder'
               ? `it's the quotient of ${fmt(of.n)} ÷ ${d}, not a remainder`
-              : `it's how far ${fmt(of.n)} is below the next multiple of ${d}, not what's left over`;
+              : `it's how far ${fmt(of.n)} is from the next multiple of ${d}, not what's left over`;
           return `${cards.map((c) => `${fmt(c.n)} = ${d} × ${fmt(c.q)} + ${c.r}`).join('. ')}. The extra card, ${decoy.value}, matches none of them: ${why}.`;
         },
       });
@@ -467,7 +467,7 @@ const cyclesMatch: Template = {
         cards.flatMap((x) => {
           const L = x.c.length;
           const pos = (x.exp - 1) % L;
-          return [x.c[(pos + 1) % L], x.c[(pos + L - 1) % L]].map((value) => ({ value, misconception: 'cycle-off-by-one', of: x }));
+          return [x.c[(pos + 1) % L], x.c[(pos + L - 1) % L]].map((value) => ({ value, misconception: 'cycle-step-off', of: x }));
         }),
       );
       return makeMatch({
@@ -484,7 +484,7 @@ const cyclesMatch: Template = {
             .map((x) => {
               const L = x.c.length;
               const r = x.exp % L;
-              return `${x.base}${sup(x.exp)}: the cycle is ${cycleText(x.c)}, and ${x.exp} = ${L} × ${Math.floor(x.exp / L)} + ${r}, so ${r === 0 ? 'a whole number of cycles ends on the last digit' : `it's the ${ordinal(r)} in the cycle`}: ${x.value}`;
+              return `${x.base}${sup(x.exp)}: the cycle is ${cycleText(x.c)}, and ${x.exp} = ${L} × ${Math.floor(x.exp / L)} + ${r}, so ${r === 0 ? 'a whole number of cycles ends on the last digit' : `it's the ${ordinal(r)} digit in the cycle`}: ${x.value}`;
             })
             .join('. ')}. The extra card, ${decoy.value}, sits next to the right digit in the cycle of ${(decoy as (typeof slips)[number]).of.base}: it's what you get by counting one step too far or too short.`,
       });

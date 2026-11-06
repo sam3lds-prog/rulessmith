@@ -459,7 +459,8 @@ function coachMatch(item: Item, response: Response): Omit<Coaching, 'rule'> | nu
   const sol = matchSolution(p);
   const wrong = p.left.map((l, i) => ({ l, i })).filter(({ i }) => response.pairs[i] !== sol[i]);
   if (wrong.length === 0) return null;
-  const lines = wrong.slice(0, 3).map(({ l, i }) => {
+  // At most four pairs: explain every one, so each card's partner is on screen.
+  const lines = wrong.map(({ l, i }) => {
     const chose = p.right[response.pairs[i]];
     const right = p.right[sol[i]];
     if (!chose || !right) return '';
@@ -468,7 +469,12 @@ function coachMatch(item: Item, response: Response): Omit<Coaching, 'rule'> | nu
       const n = BigInt(spec.n);
       const d = BigInt(spec.d);
       const q = n / d;
-      const slip = BigInt(chose.value) === q ? ` ${chose.label} is the quotient, not the remainder.` : BigInt(chose.value) === d - (n % d) ? ` ${chose.label} is how far it is to the next multiple of ${spec.d}, not what's left over.` : '';
+      const slip =
+        BigInt(chose.value) === q
+          ? ` ${chose.label} is the quotient, not the remainder.`
+          : n % d !== 0n && BigInt(chose.value) === d - (n % d)
+            ? ` ${chose.label} is how far ${fmt(n)} is from the next multiple of ${spec.d}, not what's left over.`
+            : '';
       return `You matched ${l.label} with ${chose.label}. ${fmt(n)} = ${spec.d} × ${fmt(q)} + ${n % d}, so its remainder is ${right.label}.${slip}`;
     }
     if (spec.op === 'powMod') {
@@ -484,12 +490,11 @@ function coachMatch(item: Item, response: Response): Omit<Coaching, 'rule'> | nu
       // Only explain with the cycle if it really repeats from the first power.
       if (Number(evalValue({ op: 'powMod', base, exp: L + 1, d })) !== cycle[0] || cycle[(exp - 1) % L] !== right.value) return `You matched ${l.label} with ${chose.label}. Its units digit is ${right.label}.`;
       const r = exp % L;
-      return `You matched ${l.label} with ${chose.label}. Units digits of powers of ${base} go ${cycle.join(', ')}, then repeat. ${exp} = ${L} × ${Math.floor(exp / L)} + ${r}, so ${r === 0 ? 'a whole number of cycles ends on the last one' : `it's the ${ordinal(r)} in the cycle`}: ${right.label}.`;
+      return `You matched ${l.label} with ${chose.label}. Units digits of powers of ${base} go ${cycle.join(', ')}, then repeat. ${exp} = ${L} × ${Math.floor(exp / L)} + ${r}, so ${r === 0 ? 'a whole number of cycles ends on the last one' : `it's the ${ordinal(r)} digit in the cycle`}: ${right.label}.`;
     }
     return `You matched ${l.label} with ${chose.label}. It goes with ${right.label}.`;
   });
   if (lines.some((l) => !l)) return null;
-  if (wrong.length > 3) lines.push(`${wrong.length - 3} more pair${wrong.length - 3 === 1 ? ' is' : 's are'} wrong; work them out the same way.`);
   return { submitted: `${wrong.length} of ${p.left.length} pairs ${wrong.length === 1 ? "wasn't" : "weren't"} right.`, lines, specific: true };
 }
 

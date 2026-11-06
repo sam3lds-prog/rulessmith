@@ -3,7 +3,7 @@
  * else, by brute force. Worked examples never give the puzzle's own answer away.
  */
 import { describe, expect, it } from 'vitest';
-import { workedExample } from '../coach/example';
+import { questionKey, workedExample } from '../coach/example';
 import { draftHasWork, sessionHasWork } from '../state/work';
 import type { ActiveSession } from '../state/types';
 import { correctAnswerText, mazePathBrute } from './check';
@@ -88,13 +88,15 @@ describe('Match Up checking', () => {
 
   it('grades each pair by computing the value, and marks each one', () => {
     expect(checkItem(item, { kind: 'match', pairs: [2, 0] })).toEqual({ correct: true, marks: [true, true] });
-    expect(checkItem(item, { kind: 'match', pairs: [1, 0] })).toEqual({ correct: false, marks: [false, true] });
+    // The extra card's slip is recorded, so analytics and check notes can see it.
+    expect(checkItem(item, { kind: 'match', pairs: [1, 0] })).toEqual({ correct: false, marks: [false, true], misconception: 'quotient-for-remainder' });
     expect(correctAnswerText(item)).toBe('47 → 5, 30 → 2');
   });
 
-  it('refuses incomplete or out-of-range answers', () => {
+  it('refuses incomplete, out-of-range or doubled-up answers', () => {
     expect(checkItem(item, { kind: 'match', pairs: [2] }).correct).toBe(false);
     expect(checkItem(item, { kind: 'match', pairs: [2, 9] }).correct).toBe(false);
+    expect(checkItem(item, { kind: 'match', pairs: [2, 2] }).correct).toBe(false);
   });
 });
 
@@ -114,32 +116,40 @@ describe('work in progress on the new boards', () => {
 });
 
 describe('worked examples', () => {
-  it('come from the same family and level, and never share the answer on screen', () => {
-    let found = 0;
-    let tried = 0;
+  it('come from the same family and level, and are never the same question', () => {
     for (const t of TEMPLATES) {
       for (const level of [t.minLevel ?? 1, 6, 10]) {
         const item = generateItem(t.id, level, 777 + level);
         const ex = workedExample(item);
-        tried++;
-        // A family whose answer is nearly always the same (how many digits fit a blank for 11: almost always 1)
-        // gets no example, because any example would give the answer away.
-        if (!ex) {
-          expect(t.id, item.id).toBe('div.eleven/count');
-          continue;
-        }
-        found++;
+        expect(ex, item.id).not.toBeNull();
         expect(ex!.templateId).toBe(item.templateId);
         expect(ex!.level).toBe(item.level);
         expect(ex!.id).not.toBe(item.id);
-        const shown = (x: Item) => (x.payload.kind === 'construct' && x.payload.mode === 'one' ? JSON.stringify([x.payload.fixed, correctAnswerText(x)]) : correctAnswerText(x));
-        expect(shown(ex!), item.id).not.toBe(shown(item));
-        expect(JSON.stringify(ex!.payload)).not.toBe(JSON.stringify(item.payload));
+        expect(questionKey(ex!), item.id).not.toBe(questionKey(item));
         // Deterministic: the same puzzle always offers the same example.
         expect(workedExample(item)!.id).toBe(ex!.id);
       }
     }
-    expect(found / tried).toBeGreaterThan(0.95);
+  });
+
+  it("are chosen without looking at the answer, so a family with few answers doesn't give its answer away", () => {
+    // Largest prime factor at low levels is 3 or 5; how many digits fit an 11 blank is 0 or 1.
+    // Picking an example with a different answer would reveal the answer every time.
+    for (const [id, level] of [['pf.factorize/largest', 2], ['div.eleven/count', 6]] as const) {
+      let same = 0;
+      let total = 0;
+      for (let seed = 1; seed <= 300; seed++) {
+        const item = generateItem(id, level, seed * 7919);
+        const ex = workedExample(item);
+        if (!ex) continue;
+        total++;
+        if (correctAnswerText(ex) === correctAnswerText(item)) same++;
+      }
+      expect(total, id).toBeGreaterThan(250);
+      // Roughly as often as chance: neither "always different" nor "always the same".
+      expect(same / total, id).toBeGreaterThan(0.2);
+      expect(same / total, id).toBeLessThan(0.95);
+    }
   });
 
   it('none when the family has been switched off or changed since the puzzle was made', () => {

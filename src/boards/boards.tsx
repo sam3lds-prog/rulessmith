@@ -686,16 +686,19 @@ export function MazeBoard({ payload, locked, result, onChange, initialDraft, onD
   const last = path[path.length - 1];
   const tap = (c: number) => {
     if (locked) return;
-    const at = path.indexOf(c);
-    if (at >= 0) {
+    // Built from the latest path, so two fast taps never act on a stale one.
+    setPath((prev) => {
+      const at = prev.indexOf(c);
+      const tip = prev[prev.length - 1];
       // Back up: to the tapped square, or one step if it's the last one.
-      setPath(at === path.length - 1 && at > 0 ? path.slice(0, -1) : path.slice(0, at + 1));
-      setNote(null);
-    } else if (last === end) setNote("You've reached the finish. Tap a square on your path to back up.");
-    else if (mazeAdjacent(cols, last, c)) {
-      setPath([...path, c]);
-      setNote(null);
-    } else setNote('Step to a square next to your last one: up, down, left or right.');
+      if (at >= 0) return at === prev.length - 1 && at > 0 ? prev.slice(0, -1) : prev.slice(0, at + 1);
+      if (tip === end || !mazeAdjacent(cols, tip, c)) return prev;
+      return [...prev, c];
+    });
+    // The note is only a nudge, so it reads the path as shown.
+    if (path.includes(c) || (last !== end && mazeAdjacent(cols, last, c))) setNote(null);
+    else if (last === end) setNote("You've reached the finish. Tap a square on your path to back up.");
+    else setNote('Step to a square next to your last one: up, down, left or right.');
   };
 
   const gap = 6;
@@ -726,7 +729,7 @@ export function MazeBoard({ payload, locked, result, onChange, initialDraft, onD
                 <Pressable
                   key={c}
                   accessibilityRole="button"
-                  accessibilityLabel={`Row ${r + 1}, column ${k + 1}: ${fmt(cells[c])}${flag ? `, ${flag.toLowerCase()}` : ''}${on ? `, step ${step + 1} of your path` : ''}${good === true ? ', fits' : good === false ? ", doesn't fit" : ''}`}
+                  accessibilityLabel={`Row ${r + 1}, column ${k + 1}: ${fmt(cells[c])}${flag ? `, ${flag.toLowerCase()}` : ''}${on ? `, step ${step + 1} of your path` : ''}${next ? ', next to your last square' : ''}${good === true ? ', fits' : good === false ? ", doesn't fit" : ''}`}
                   accessibilityState={{ selected: on, disabled: locked }}
                   onPress={() => tap(c)}
                   disabled={locked}
@@ -758,8 +761,8 @@ export function MazeBoard({ payload, locked, result, onChange, initialDraft, onD
       {note ? <Small style={{ color: color.ink }}>{note}</Small> : null}
       {!locked && path.length > 1 ? (
         <View style={{ flexDirection: 'row', gap: space.sm }}>
-          <Tile label="Back one step" size="sm" onPress={() => setPath(path.slice(0, -1))} />
-          <Tile label="Start again" size="sm" onPress={() => setPath([start])} />
+          <Tile label="Back one step" size="md" onPress={() => setPath((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev))} />
+          <Tile label="Start again" size="md" onPress={() => setPath([start])} />
         </View>
       ) : null}
     </View>
@@ -803,7 +806,11 @@ export function MatchBoard({ payload, locked, result, onChange, initialDraft, on
   const nR = payload.right.length;
   const [state, setState] = useState<{ pairs: (number | null)[]; sel: number | null }>(() => {
     const saved =
-      initialDraft?.kind === 'match' && initialDraft.pairs.length === nL && initialDraft.pairs.every((x) => x === null || (Number.isInteger(x) && x >= 0 && x < nR))
+      initialDraft?.kind === 'match' &&
+      initialDraft.pairs.length === nL &&
+      initialDraft.pairs.every((x) => x === null || (Number.isInteger(x) && x >= 0 && x < nR)) &&
+      // One partner per card: a saved draft that pairs a card twice is ignored.
+      new Set(initialDraft.pairs.filter((x) => x !== null)).size === initialDraft.pairs.filter((x) => x !== null).length
         ? initialDraft.pairs
         : null;
     const pairs = saved ?? Array(nL).fill(null);
@@ -920,8 +927,8 @@ const ms = StyleSheet.create({
   mazeRight: { backgroundColor: color.rightWash, borderColor: color.right },
   mazeWrong: { backgroundColor: color.wrongWash, borderColor: color.wrong },
   mazeNum: { fontFamily: font.num, fontVariant: ['tabular-nums'] },
-  mazeFlag: { position: 'absolute', top: 2, fontFamily: font.label, fontSize: 9, letterSpacing: 0.2 },
-  mazeStep: { position: 'absolute', bottom: 2, right: 4, fontFamily: font.label, fontSize: 9 },
+  mazeFlag: { position: 'absolute', top: 2, fontFamily: font.label, fontSize: 10, letterSpacing: 0.2 },
+  mazeStep: { position: 'absolute', bottom: 2, right: 4, fontFamily: font.label, fontSize: 10 },
   mazeMark: { position: 'absolute', top: 1, right: 4, fontFamily: font.heading, fontSize: 12 },
   previewCell: { width: 38, height: 30, borderRadius: 6, borderWidth: 1, borderColor: color.rule, backgroundColor: color.surface, alignItems: 'center', justifyContent: 'center' },
   matchCols: { flexDirection: 'row', gap: space.md },

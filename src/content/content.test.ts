@@ -128,6 +128,10 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('%s', (id, template) => 
             expect(besideFail, `${where} nothing to avoid next to the route`).toBeDefined();
             // Any valid path counts: the shortest one found by search is accepted too.
             expect(checkItem(item, { kind: 'maze', path: route! }).correct, where).toBe(true);
+            // No shortcuts: the search's shortest route is the carved one (dead ends are leaves),
+            // and grids bigger than 4 × 4 need at least one detour.
+            expect(route!.length, `${where} a dead end made a shortcut`).toBe(key.length);
+            if (total > 16) expect(route!.length, `${where} no detour`).toBeGreaterThanOrEqual(p.rows + p.cols + 1);
             break;
           }
           case 'match': {

@@ -320,7 +320,7 @@ Remainder basics. Board: match.
 1. Find the largest multiple of 9 that fits in each number.
 2. The remainder is what's left over, and it's always less than 9. It isn't the quotient.
 
-**Explanation.** 901 = 9 × 100 + 1. 432 = 9 × 48 + 0. 481 = 9 × 53 + 4. 905 = 9 × 100 + 5. The extra card, 8, matches none of them: it's how far 901 is below the next multiple of 9, not what's left over.
+**Explanation.** 901 = 9 × 100 + 1. 432 = 9 × 48 + 0. 481 = 9 × 53 + 4. 905 = 9 × 100 + 5. The extra card, 8, matches none of them: it's how far 901 is from the next multiple of 9, not what's left over.
 
 #### Level 10 `rem.basics/match@10#20261112`
 
@@ -337,7 +337,7 @@ Remainder basics. Board: match.
 1. Find the largest multiple of 13 that fits in each number.
 2. The remainder is what's left over, and it's always less than 13. It isn't the quotient.
 
-**Explanation.** 9554 = 13 × 734 + 12. 4472 = 13 × 344 + 0. 2329 = 13 × 179 + 2. 1267 = 13 × 97 + 6. The extra card, 7, matches none of them: it's how far 1267 is below the next multiple of 13, not what's left over.
+**Explanation.** 9554 = 13 × 734 + 12. 4472 = 13 × 344 + 0. 2329 = 13 × 179 + 2. 1267 = 13 × 97 + 6. The extra card, 7, matches none of them: it's how far 1267 is from the next multiple of 13, not what's left over.
 
 **Checklist** (all three levels)
 
@@ -903,7 +903,7 @@ Cycles and units digits. Board: match.
 **Rule.** Units digits of powers repeat in short cycles. 7: 7, 9, 3, 1, then again. Divide the exponent by the cycle length and use the remainder.
 
 - Power: 2¹⁵ | 8¹⁴ | 3²²
-- Units digit: 3 (extra card, misconception: `cycle-off-by-one`) | 9 | 4 | 8
+- Units digit: 3 (extra card, misconception: `cycle-step-off`) | 9 | 4 | 8
 
 **Answer (from the checker).** 2¹⁵ → 8, 8¹⁴ → 4, 3²² → 9
 
@@ -911,7 +911,7 @@ Cycles and units digits. Board: match.
 1. Write the cycle of units digits for each base: 7 goes 7, 9, 3, 1, then repeats.
 2. Divide each exponent by its cycle length. A remainder of 0 means the last digit in the cycle.
 
-**Explanation.** 2¹⁵: the cycle is 2, 4, 8, 6, and 15 = 4 × 3 + 3, so it's the 3rd in the cycle: 8. 8¹⁴: the cycle is 8, 4, 2, 6, and 14 = 4 × 3 + 2, so it's the 2nd in the cycle: 4. 3²²: the cycle is 3, 9, 7, 1, and 22 = 4 × 5 + 2, so it's the 2nd in the cycle: 9. The extra card, 3, sits next to the right digit in the cycle of 3: it's what you get by counting one step too far or too short.
+**Explanation.** 2¹⁵: the cycle is 2, 4, 8, 6, and 15 = 4 × 3 + 3, so it's the 3rd digit in the cycle: 8. 8¹⁴: the cycle is 8, 4, 2, 6, and 14 = 4 × 3 + 2, so it's the 2nd digit in the cycle: 4. 3²²: the cycle is 3, 9, 7, 1, and 22 = 4 × 5 + 2, so it's the 2nd digit in the cycle: 9. The extra card, 3, sits next to the right digit in the cycle of 3: it's what you get by counting one step too far or too short.
 
 #### Level 6 `rem.cycles/match@6#20261108`
 
@@ -920,7 +920,7 @@ Cycles and units digits. Board: match.
 **Rule.** Units digits of powers repeat in short cycles. 7: 7, 9, 3, 1, then again. Divide the exponent by the cycle length and use the remainder.
 
 - Power: 7⁹⁵ | 8⁷³ | 9⁹⁴ | 2⁹²
-- Units digit: 3 | 1 | 6 | 9 (extra card, misconception: `cycle-off-by-one`) | 8
+- Units digit: 3 | 1 | 6 | 9 (extra card, misconception: `cycle-step-off`) | 8
 
 **Answer (from the checker).** 7⁹⁵ → 3, 8⁷³ → 8, 9⁹⁴ → 1, 2⁹² → 6
 
@@ -928,7 +928,7 @@ Cycles and units digits. Board: match.
 1. Write the cycle of units digits for each base: 7 goes 7, 9, 3, 1, then repeats.
 2. Divide each exponent by its cycle length. A remainder of 0 means the last digit in the cycle.
 
-**Explanation.** 7⁹⁵: the cycle is 7, 9, 3, 1, and 95 = 4 × 23 + 3, so it's the 3rd in the cycle: 3. 8⁷³: the cycle is 8, 4, 2, 6, and 73 = 4 × 18 + 1, so it's the 1st in the cycle: 8. 9⁹⁴: the cycle is 9, 1, and 94 = 2 × 47 + 0, so a whole number of cycles ends on the last digit: 1. 2⁹²: the cycle is 2, 4, 8, 6, and 92 = 4 × 23 + 0, so a whole number of cycles ends on the last digit: 6. The extra card, 9, sits next to the right digit in the cycle of 9: it's what you get by counting one step too far or too short.
+**Explanation.** 7⁹⁵: the cycle is 7, 9, 3, 1, and 95 = 4 × 23 + 3, so it's the 3rd digit in the cycle: 3. 8⁷³: the cycle is 8, 4, 2, 6, and 73 = 4 × 18 + 1, so it's the 1st digit in the cycle: 8. 9⁹⁴: the cycle is 9, 1, and 94 = 2 × 47 + 0, so a whole number of cycles ends on the last digit: 1. 2⁹²: the cycle is 2, 4, 8, 6, and 92 = 4 × 23 + 0, so a whole number of cycles ends on the last digit: 6. The extra card, 9, sits next to the right digit in the cycle of 9: it's what you get by counting one step too far or too short.
 
 #### Level 10 `rem.cycles/match@10#20261112`
 
@@ -937,7 +937,7 @@ Cycles and units digits. Board: match.
 **Rule.** Units digits of powers repeat in short cycles. 7: 7, 9, 3, 1, then again. Divide the exponent by the cycle length and use the remainder.
 
 - Power: 18⁴¹³ | 13⁷⁴⁸ | 3²¹³ | 8⁹⁵⁵
-- Units digit: 4 (extra card, misconception: `cycle-off-by-one`) | 2 | 3 | 1 | 8
+- Units digit: 4 (extra card, misconception: `cycle-step-off`) | 2 | 3 | 1 | 8
 
 **Answer (from the checker).** 18⁴¹³ → 8, 13⁷⁴⁸ → 1, 3²¹³ → 3, 8⁹⁵⁵ → 2
 
@@ -945,7 +945,7 @@ Cycles and units digits. Board: match.
 1. Write the cycle of units digits for each base: 7 goes 7, 9, 3, 1, then repeats.
 2. Divide each exponent by its cycle length. A remainder of 0 means the last digit in the cycle.
 
-**Explanation.** 18⁴¹³: the cycle is 8, 4, 2, 6, and 413 = 4 × 103 + 1, so it's the 1st in the cycle: 8. 13⁷⁴⁸: the cycle is 3, 9, 7, 1, and 748 = 4 × 187 + 0, so a whole number of cycles ends on the last digit: 1. 3²¹³: the cycle is 3, 9, 7, 1, and 213 = 4 × 53 + 1, so it's the 1st in the cycle: 3. 8⁹⁵⁵: the cycle is 8, 4, 2, 6, and 955 = 4 × 238 + 3, so it's the 3rd in the cycle: 2. The extra card, 4, sits next to the right digit in the cycle of 8: it's what you get by counting one step too far or too short.
+**Explanation.** 18⁴¹³: the cycle is 8, 4, 2, 6, and 413 = 4 × 103 + 1, so it's the 1st digit in the cycle: 8. 13⁷⁴⁸: the cycle is 3, 9, 7, 1, and 748 = 4 × 187 + 0, so a whole number of cycles ends on the last digit: 1. 3²¹³: the cycle is 3, 9, 7, 1, and 213 = 4 × 53 + 1, so it's the 1st digit in the cycle: 3. 8⁹⁵⁵: the cycle is 8, 4, 2, 6, and 955 = 4 × 238 + 3, so it's the 3rd digit in the cycle: 2. The extra card, 4, sits next to the right digit in the cycle of 8: it's what you get by counting one step too far or too short.
 
 **Checklist** (all three levels)
 

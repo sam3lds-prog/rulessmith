@@ -359,23 +359,23 @@ function carvePath(rng: Rng, rows: number, cols: number, minLen: number, maxLen:
   return go(0) ? path : null;
 }
 
-/** Rule-based route check for the generator (the checker has its own brute-force search). */
-function routeExists(pass: boolean[], rows: number, cols: number): boolean {
+/** Squares on the shortest route (rule-based, for the generator; the checker has its own search), or 0 if none. */
+function shortestRoute(pass: boolean[], rows: number, cols: number): number {
   const end = rows * cols - 1;
-  if (!pass[0] || !pass[end]) return false;
-  const seen = new Set([0]);
+  if (!pass[0] || !pass[end]) return 0;
+  const dist = new Map([[0, 1]]);
   const queue = [0];
   while (queue.length) {
     const c = queue.shift() as number;
-    if (c === end) return true;
+    if (c === end) return dist.get(c) as number;
     for (const n of gridNeighbours(c, rows, cols)) {
-      if (!seen.has(n) && pass[n]) {
-        seen.add(n);
+      if (!dist.has(n) && pass[n]) {
+        dist.set(n, (dist.get(c) as number) + 1);
         queue.push(n);
       }
     }
   }
-  return false;
+  return 0;
 }
 
 /**
@@ -396,10 +396,14 @@ export function makeMaze(spec: MazeSpec): ItemDraft | null {
   const beside = new Set<number>();
   for (const c of route) for (const n of gridNeighbours(c, rows, cols)) if (!onRoute.has(n)) beside.add(n);
 
+  // Dead ends touch exactly one route square and no other dead end, so they never join two
+  // parts of the route into a shortcut: the carved route stays the only way through.
   const deadEnds = new Set<number>();
   const want = level >= 7 ? 2 : level >= 4 ? 1 : 0;
   for (const c of rng.shuffle([...beside])) {
     if (deadEnds.size >= want) break;
+    const near = gridNeighbours(c, rows, cols);
+    if (near.filter((n) => onRoute.has(n)).length !== 1 || near.some((n) => deadEnds.has(n)) || c === total - 1) continue;
     deadEnds.add(c);
   }
 
@@ -434,7 +438,7 @@ export function makeMaze(spec: MazeSpec): ItemDraft | null {
   // Every number is where it should be, and the route really goes through (rule-based).
   const pass = cells.map((s) => ruleEval(s, p));
   if (cells.some((_, c) => pass[c] !== (onRoute.has(c) || deadEnds.has(c)))) return null;
-  if (!routeExists(pass, rows, cols)) return null;
+  if (shortestRoute(pass, rows, cols) !== route.length) return null;
 
   const why = spec.why;
   const shown = route.map((c) => (why ? `${fmt(cells[c])} (${why(cells[c])})` : fmt(cells[c])));

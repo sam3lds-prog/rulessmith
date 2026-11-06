@@ -123,7 +123,7 @@ export default function Session() {
       game={game}
       eyebrow={eyebrow}
       feedback={active.feedback}
-      explain={explain}
+      explain={isCheck ? 'all' : explain}
       onRelated={active.feedback === 'immediate' && !active.ladder && !active.challenge ? addRelatedSlot : undefined}
       topicId={item.skillId}
       header={header}

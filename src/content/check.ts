@@ -115,7 +115,12 @@ export function checkItem(item: Item, response: Response): CheckResult {
         const r = p.right[response.pairs[i]];
         return r !== undefined && BigInt(r.value) === evalValue(l.spec);
       });
-      return { correct: marks.every(Boolean), marks };
+      // Each right-hand card partners one left card at most.
+      const distinct = new Set(response.pairs).size === response.pairs.length;
+      // The named slip of the first wrong card chosen, if it has one (the extra card does).
+      const slip = p.left.map((_, i) => (marks[i] ? undefined : p.right[response.pairs[i]]?.misconception)).find(Boolean);
+      const correct = marks.every(Boolean) && distinct;
+      return { correct, marks, misconception: correct ? undefined : slip };
     }
   }
 }

@@ -259,7 +259,7 @@ describe('coaching the new games', () => {
       rightTitle: 'Units digit',
     });
     const c = run(item, { kind: 'match', pairs: [1] });
-    expect(c.lines[0]).toBe("You matched 7¹⁰ with 3. Units digits of powers of 7 go 7, 9, 3, 1, then repeat. 10 = 4 × 2 + 2, so it's the 2nd in the cycle: 9.");
+    expect(c.lines[0]).toBe("You matched 7¹⁰ with 3. Units digits of powers of 7 go 7, 9, 3, 1, then repeat. 10 = 4 × 2 + 2, so it's the 2nd digit in the cycle: 9.");
   });
 });
 
